@@ -1,0 +1,166 @@
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index 69c91d1..3e7649b 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -25,6 +25,7 @@
+ #include <linux/percpu.h>
+ #include <linux/notifier.h>
+ #include <linux/refcount.h>
++#include <net/xdp_monitor.h>
+ 
+ struct fib_config {
+ 	u8			fc_dst_len;
+@@ -264,7 +265,10 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+ {
+ 	struct fib_table *tb;
+ 	int err = -ENETUNREACH;
+-
++        u64 tsc1 = 0, tsc2 = 0;
++        bool b;
++        int i = 0;
++        
+ 	rcu_read_lock();
+ 
+ 	tb = fib_get_table(net, RT_TABLE_MAIN);
+@@ -273,6 +277,16 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+ 
+ 	if (err == -EAGAIN)
+ 		err = -ENETUNREACH;
++        for (i = 0; i < 200; i++) {
++            tsc1 = rdtsc();
++            b = flow_seen(flp->daddr);
++            tsc2 = rdtsc();
++            if (b) {
++                pr_err("Flow Seen. Cost = %llu !!!!!", tsc2 - tsc1);
++            } else {
++                pr_err("Flow not seen. Cost = %llu  $$$$$$$$$", tsc2 - tsc1);
++            }   
++        }
+ 
+ 	rcu_read_unlock();
+ 
+diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
+new file mode 100644
+index 0000000..bbe0664
+--- /dev/null
++++ b/include/net/xdp_monitor.h
+@@ -0,0 +1,41 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ *   This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ */
++#ifndef __LINUX_NET_XDP_MONITOR_H__
++#define __LINUX_NET_XDP_MONITOR_H__
++
++#include <net/flow.h>
++#include <linux/seq_file.h>
++#include <linux/rcupdate.h>
++#include <net/fib_notifier.h>
++#include <net/fib_rules.h>
++#include <net/inetpeer.h>
++#include <linux/percpu.h>
++#include <linux/notifier.h>
++#include <linux/refcount.h>
++
++struct flow_bitmap_2 {
++    u64 arr1[1024];
++    u64 arr2[1024];
++};
++
++struct flow_arr {
++    u8 arr1[65536];
++    u8 arr2[65536];
++};
++
++struct flow_bitmap_3 {
++    u64 arr1[64];
++    u64 arr2[16];
++    u64 arr3[16];
++};
++
++bool flow_seen (u32 dest_ip);
++void reset_flow_bitmap (void);
++
++#endif /* __LINUX_NET_XDP_MONITOR_H__ */
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index 7446b98..c610efc 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -14,7 +14,7 @@ obj-y     := route.o inetpeer.o protocol.o \
+ 	     udp_offload.o arp.o icmp.o devinet.o af_inet.o igmp.o \
+ 	     fib_frontend.o fib_semantics.o fib_trie.o fib_notifier.o \
+ 	     inet_fragment.o ping.o ip_tunnel_core.o gre_offload.o \
+-	     metrics.o netlink.o
++	     metrics.o netlink.o xdp_monitor.o
+ 
+ obj-$(CONFIG_BPFILTER) += bpfilter/
+ 
+diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
+new file mode 100644
+index 0000000..dacfdbd
+--- /dev/null
++++ b/net/ipv4/xdp_monitor.c
+@@ -0,0 +1,59 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ *   This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ *
++ */
++
++#include <net/xdp_monitor.h>
++
++struct flow_bitmap_2 bm2;
++
++//struct flow_arr bm1;
++
++__always_inline bool flow_seen (u32 dest_ip)
++{
++    u16 part1 = dest_ip & 65535;
++    u16 part2 = dest_ip >> 16;
++   
++//    u16 part1_idx = part1 >> 6; //divide by 64
++//    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
++//    u16 part2_idx = part2 >> 6; //divide by 64
++//    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
++    
++    u16 part1_idx = part1 / 64; //divide by 64
++    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
++    u16 part2_idx = part2 / 64; //divide by 64
++    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
++    
++    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
++        return true;
++    } else {
++        bm2.arr1[part1_idx] |= part1_bitmap;
++        bm2.arr2[part2_idx] |= part2_bitmap;
++        return false;
++    }
++}
++
++//__always_inline bool flow_seen (u32 dest_ip)
++//{
++//    u16 part1 = dest_ip & 65535;
++//    u16 part2 = dest_ip >> 16;
++//       
++//    if(bm1.arr1[part1] && bm1.arr2[part2]) {
++//        return true;
++//    } else {
++//        bm1.arr1[part1] = 1;
++//        bm1.arr2[part2] = 1;
++//        return false;
++//    }
++//}
++
++void reset_flow_bitmap (void)
++{
++    
++}
++
