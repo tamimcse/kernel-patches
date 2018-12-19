@@ -101,10 +101,10 @@ index 7446b98..c610efc 100644
  
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..dacfdbd
+index 0000000..92679a4
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,195 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -118,32 +118,168 @@ index 0000000..dacfdbd
 +#include <net/xdp_monitor.h>
 +
 +struct flow_bitmap_2 bm2;
++struct flow_bitmap_3 bm3;
 +
 +//struct flow_arr bm1;
 +
++//cuckcoo filter 
++u8 cf[16384];
++#define FINGERPRINT(X) ((X) % 256)
++#define HASH(X) (((X) * 64) % 16381)
++#define MAX_KICK_CNT 10
++
 +__always_inline bool flow_seen (u32 dest_ip)
 +{
-+    u16 part1 = dest_ip & 65535;
-+    u16 part2 = dest_ip >> 16;
-+   
++    u8 tmp;
++    int i;
++
++    u8 fingerprint = FINGERPRINT(dest_ip);
++    u16 i1 = HASH(dest_ip);
++    u16 i2 = i1 ^ HASH(fingerprint);
++    
++    if (likely(cf[i1] == fingerprint || cf[i2] == fingerprint)) {
++        return true;
++    }else {
++        if(!cf[i1]) {
++            cf[i1] = fingerprint;
++            return false;
++        } else if (!cf[i2]) {
++            cf[i2] = fingerprint;
++            return false;
++        }                      
++        
++        
++        for (i = 0; i < MAX_KICK_CNT; i++) {
++            tmp = cf[i1];
++            cf[i1] = fingerprint;
++            fingerprint = tmp;
++            i1 = i1 ^ HASH(fingerprint);
++            if (!cf[i1]) {
++                cf[i1] = fingerprint;
++                return false;                
++            }
++        }
++        
++        for (i = 0; i < MAX_KICK_CNT; i++) {
++            tmp = cf[i2];
++            cf[i2] = fingerprint;
++            fingerprint = tmp;
++            i2 = i2 ^ HASH(fingerprint);
++            if (!cf[i2]) {
++                cf[i2] = fingerprint;
++                return false;                
++            }
++        }
++        
++        pr_err("Could not kick :-)");        
++                
++        return false;
++    }
++}
++
++////cuckcoo filter 
++//u8 cf[8192][4];
++//#define FINGERPRINT(X) ((X) % 256)
++//#define HASH(X) ((X) * 32) % 8192
++
++//__always_inline bool flow_seen (u32 dest_ip)
++//{
++//    u16 part1 = dest_ip & 4095;
++//    u16 temp = (dest_ip >> 12);
++//    u16 part2 = temp & 1023;
++//    u16 part3 = temp >> 10;
++//   
 +//    u16 part1_idx = part1 >> 6; //divide by 64
 +//    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
 +//    u16 part2_idx = part2 >> 6; //divide by 64
 +//    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
-+    
-+    u16 part1_idx = part1 / 64; //divide by 64
-+    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
-+    u16 part2_idx = part2 / 64; //divide by 64
-+    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
-+    
-+    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
-+        return true;
-+    } else {
-+        bm2.arr1[part1_idx] |= part1_bitmap;
-+        bm2.arr2[part2_idx] |= part2_bitmap;
-+        return false;
-+    }
-+}
++//    u16 part3_idx = part3 >> 6; //divide by 64
++//    u64 part3_bitmap = 1ULL << (part3 & 63); //modulo by 64
++//    
++//    if(likely((bm3.arr1[part1_idx] & part1_bitmap) && (bm3.arr2[part2_idx] & part2_bitmap) && (bm3.arr3[part3_idx] & part3_bitmap))) {
++//        return true;
++//    } else {
++//        bm3.arr1[part1_idx] |= part1_bitmap;
++//        bm3.arr2[part2_idx] |= part2_bitmap;
++//        bm3.arr3[part3_idx] |= part3_bitmap;
++//        return false;
++//    }
++//}
++
++//__always_inline bool flow_seen (u32 dest_ip)
++//{
++//    int j;
++//    u8 fingerprint = FINGERPRINT(dest_ip);
++//    u16 i1 = HASH(dest_ip);
++//    u16 i2 = i1 ^ HASH(fingerprint);
++//
++//    if (cf[i1][0] == fingerprint ||
++//            cf[i1][1] == fingerprint ||
++//            cf[i1][2] == fingerprint ||
++//            cf[i1][3] == fingerprint ||
++//            cf[i2][0] == fingerprint ||
++//            cf[i2][1] == fingerprint ||
++//            cf[i2][2] == fingerprint ||
++//            cf[i2][3] == fingerprint)
++//        return true;
++//    else {
++//        for (j = 0; j < 4; j++) {
++//            if(!cf[i1][j]) {
++//                cf[i1][j] = fingerprint;
++//                return false;
++//            }
++//        }
++//        
++//        for (j = 0; j < 4; j++) {
++//            if(!cf[i2][j]) {
++//                cf[i2][j] = fingerprint;
++//                return false;
++//            }
++//        }
++//
++//        pr_err("Need to pick someone up randomly");
++//        
++//        return false;
++//    }
++//}
++
++//__always_inline bool flow_seen (u32 dest_ip)
++//{
++//    u16 part1 = dest_ip & 65535;
++//    u16 part2 = dest_ip >> 16;
++//   
++//    u16 part1_idx = part1 >> 6; //divide by 64
++//    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
++//    u16 part2_idx = part2 >> 6; //divide by 64
++//    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
++//    
++//    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
++//        return true;
++//    } else {
++//        bm2.arr1[part1_idx] |= part1_bitmap;
++//        bm2.arr2[part2_idx] |= part2_bitmap;
++//        return false;
++//    }
++//}
++
++//__always_inline bool flow_seen (u32 dest_ip)
++//{
++//    u16 part1 = dest_ip & 65535;
++//    u16 part2 = dest_ip >> 16;
++//    
++//    u16 part1_idx = part1 / 64; //divide by 64
++//    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
++//    u16 part2_idx = part2 / 64; //divide by 64
++//    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
++//    
++//    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
++//        return true;
++//    } else {
++//        bm2.arr1[part1_idx] |= part1_bitmap;
++//        bm2.arr2[part2_idx] |= part2_bitmap;
++//        return false;
++//    }
++//}
 +
 +//__always_inline bool flow_seen (u32 dest_ip)
 +//{
