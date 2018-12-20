@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..3e7649b 100644
+index 69c91d1..f938a0d 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,7 @@
@@ -10,7 +10,20 @@ index 69c91d1..3e7649b 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -264,7 +265,10 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+@@ -259,12 +260,23 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+ 	return fib_get_table(net, id);
+ }
+ 
++#ifdef __i386__
++#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
++#elif __x86_64__
++#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
++#else
++# error unknown platform
++#endif
++
+ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+ 			     struct fib_result *res, unsigned int flags)
  {
  	struct fib_table *tb;
  	int err = -ENETUNREACH;
@@ -22,18 +35,44 @@ index 69c91d1..3e7649b 100644
  	rcu_read_lock();
  
  	tb = fib_get_table(net, RT_TABLE_MAIN);
-@@ -273,6 +277,16 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+@@ -273,6 +285,42 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
  
  	if (err == -EAGAIN)
  		err = -ENETUNREACH;
 +        for (i = 0; i < 200; i++) {
-+            tsc1 = rdtsc();
-+            b = flow_seen(flp->daddr);
-+            tsc2 = rdtsc();
++            register uint64_t start, end;                      
++            unsigned long flag;                                
++            register unsigned cyc_high1, cyc_low1;             
++            register unsigned cyc_high2, cyc_low2;                     
++            preempt_disable();                                 
++            raw_local_irq_save(flag);                          
++            raw_local_irq_disable();                           
++            asm volatile("CPUID\n\t"                           \
++                         "RDTSC\n\t"                           \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                         :: RDTSC_DIRTY);                      
++            b = flow_seen(flp->daddr);                                            
++            asm volatile("RDTSCP\n\t"                          \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         "CPUID\n\t"                           \
++                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                         :: RDTSC_DIRTY);                      
++            raw_local_irq_enable();                            
++            raw_local_irq_restore(flag);                       
++            preempt_enable();                                  
++            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;      
++//            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", (end-start - 41));
++
++            
++
 +            if (b) {
-+                pr_err("Flow Seen. Cost = %llu !!!!!", tsc2 - tsc1);
++                pr_err("Flow Seen. Cost = %llu !!!!!", (end-start - 41));
 +            } else {
-+                pr_err("Flow not seen. Cost = %llu  $$$$$$$$$", tsc2 - tsc1);
++                pr_err("Flow not seen. Cost = %llu  $$$$$$$$$", (end-start - 41));
 +            }   
 +        }
  
@@ -101,10 +140,10 @@ index 7446b98..c610efc 100644
  
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..92679a4
+index 0000000..012bf4a
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,158 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -117,18 +156,13 @@ index 0000000..92679a4
 +
 +#include <net/xdp_monitor.h>
 +
-+struct flow_bitmap_2 bm2;
-+struct flow_bitmap_3 bm3;
-+
-+//struct flow_arr bm1;
-+
-+//cuckcoo filter 
 +u8 cf[16384];
 +#define FINGERPRINT(X) ((X) % 256)
 +#define HASH(X) (((X) * 64) % 16381)
 +#define MAX_KICK_CNT 10
 +
-+__always_inline bool flow_seen (u32 dest_ip)
++//20~21 cycles
++__always_inline bool flow_seen_cuckoo_filter (u32 dest_ip)
 +{
 +    u8 tmp;
 +    int i;
@@ -182,104 +216,72 @@ index 0000000..92679a4
 +//#define FINGERPRINT(X) ((X) % 256)
 +//#define HASH(X) ((X) * 32) % 8192
 +
-+//__always_inline bool flow_seen (u32 dest_ip)
-+//{
-+//    u16 part1 = dest_ip & 4095;
-+//    u16 temp = (dest_ip >> 12);
-+//    u16 part2 = temp & 1023;
-+//    u16 part3 = temp >> 10;
-+//   
-+//    u16 part1_idx = part1 >> 6; //divide by 64
-+//    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
-+//    u16 part2_idx = part2 >> 6; //divide by 64
-+//    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
-+//    u16 part3_idx = part3 >> 6; //divide by 64
-+//    u64 part3_bitmap = 1ULL << (part3 & 63); //modulo by 64
-+//    
-+//    if(likely((bm3.arr1[part1_idx] & part1_bitmap) && (bm3.arr2[part2_idx] & part2_bitmap) && (bm3.arr3[part3_idx] & part3_bitmap))) {
-+//        return true;
-+//    } else {
-+//        bm3.arr1[part1_idx] |= part1_bitmap;
-+//        bm3.arr2[part2_idx] |= part2_bitmap;
-+//        bm3.arr3[part3_idx] |= part3_bitmap;
-+//        return false;
-+//    }
-+//}
++struct flow_bitmap_3 bm3;
++__always_inline bool flow_seen_bitmap3 (u32 dest_ip)
++{
++    u16 part1 = dest_ip & 4095;
++    u16 temp = (dest_ip >> 12);
++    u16 part2 = temp & 1023;
++    u16 part3 = temp >> 10;
++   
++    u16 part1_idx = part1 >> 6; //divide by 64
++    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
++    u16 part2_idx = part2 >> 6; //divide by 64
++    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
++    u16 part3_idx = part3 >> 6; //divide by 64
++    u64 part3_bitmap = 1ULL << (part3 & 63); //modulo by 64
++    
++    if(likely((bm3.arr1[part1_idx] & part1_bitmap) && (bm3.arr2[part2_idx] & part2_bitmap) && (bm3.arr3[part3_idx] & part3_bitmap))) {
++        return true;
++    } else {
++        bm3.arr1[part1_idx] |= part1_bitmap;
++        bm3.arr2[part2_idx] |= part2_bitmap;
++        bm3.arr3[part3_idx] |= part3_bitmap;
++        return false;
++    }
++}
 +
-+//__always_inline bool flow_seen (u32 dest_ip)
-+//{
-+//    int j;
-+//    u8 fingerprint = FINGERPRINT(dest_ip);
-+//    u16 i1 = HASH(dest_ip);
-+//    u16 i2 = i1 ^ HASH(fingerprint);
-+//
-+//    if (cf[i1][0] == fingerprint ||
-+//            cf[i1][1] == fingerprint ||
-+//            cf[i1][2] == fingerprint ||
-+//            cf[i1][3] == fingerprint ||
-+//            cf[i2][0] == fingerprint ||
-+//            cf[i2][1] == fingerprint ||
-+//            cf[i2][2] == fingerprint ||
-+//            cf[i2][3] == fingerprint)
-+//        return true;
-+//    else {
-+//        for (j = 0; j < 4; j++) {
-+//            if(!cf[i1][j]) {
-+//                cf[i1][j] = fingerprint;
-+//                return false;
-+//            }
-+//        }
-+//        
-+//        for (j = 0; j < 4; j++) {
-+//            if(!cf[i2][j]) {
-+//                cf[i2][j] = fingerprint;
-+//                return false;
-+//            }
-+//        }
-+//
-+//        pr_err("Need to pick someone up randomly");
-+//        
-+//        return false;
-+//    }
-+//}
++struct flow_bitmap_2 bm2;
 +
-+//__always_inline bool flow_seen (u32 dest_ip)
-+//{
-+//    u16 part1 = dest_ip & 65535;
-+//    u16 part2 = dest_ip >> 16;
-+//   
-+//    u16 part1_idx = part1 >> 6; //divide by 64
-+//    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
-+//    u16 part2_idx = part2 >> 6; //divide by 64
-+//    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
-+//    
-+//    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
-+//        return true;
-+//    } else {
-+//        bm2.arr1[part1_idx] |= part1_bitmap;
-+//        bm2.arr2[part2_idx] |= part2_bitmap;
-+//        return false;
-+//    }
-+//}
++//14~23 cycles
++__always_inline bool flow_seen_bitmap2_v1 (u32 dest_ip)
++{
++    u16 part1 = dest_ip & 65535;
++    u16 part2 = dest_ip >> 16;
++   
++    u16 part1_idx = part1 >> 6; //divide by 64
++    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
++    u16 part2_idx = part2 >> 6; //divide by 64
++    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
++    
++    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
++        return true;
++    } else {
++        bm2.arr1[part1_idx] |= part1_bitmap;
++        bm2.arr2[part2_idx] |= part2_bitmap;
++        return false;
++    }
++}
 +
-+//__always_inline bool flow_seen (u32 dest_ip)
-+//{
-+//    u16 part1 = dest_ip & 65535;
-+//    u16 part2 = dest_ip >> 16;
-+//    
-+//    u16 part1_idx = part1 / 64; //divide by 64
-+//    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
-+//    u16 part2_idx = part2 / 64; //divide by 64
-+//    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
-+//    
-+//    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
-+//        return true;
-+//    } else {
-+//        bm2.arr1[part1_idx] |= part1_bitmap;
-+//        bm2.arr2[part2_idx] |= part2_bitmap;
-+//        return false;
-+//    }
-+//}
++//16~17 cycles
++__always_inline bool flow_seen_bitmap2_v2 (u32 dest_ip)
++{
++    u16 part1 = dest_ip & 65535;
++    u16 part2 = dest_ip >> 16;
++    
++    u16 part1_idx = part1 / 64; //divide by 64
++    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
++    u16 part2_idx = part2 / 64; //divide by 64
++    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
++    
++    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap))) {
++        return true;
++    } else {
++        bm2.arr1[part1_idx] |= part1_bitmap;
++        bm2.arr2[part2_idx] |= part2_bitmap;
++        return false;
++    }
++}
 +
 +//__always_inline bool flow_seen (u32 dest_ip)
 +//{
