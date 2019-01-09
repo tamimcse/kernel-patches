@@ -101,10 +101,10 @@ index 69c91d1..d39005c 100644
  
 diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
 new file mode 100644
-index 0000000..549df0b
+index 0000000..f7ca8bd
 --- /dev/null
 +++ b/include/net/xdp_monitor.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,26 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -126,12 +126,9 @@ index 0000000..549df0b
 +#include <linux/notifier.h>
 +#include <linux/refcount.h>
 +
-+
-+
-+
-+
 +bool flow_seen (u32 ip, u16 port);
 +void reset_flow_bitmap (void);
++void xcp_protocol (struct xdp_buff *skb, u32 size);
 +
 +#endif /* __LINUX_NET_XDP_MONITOR_H__ */
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
@@ -149,10 +146,10 @@ index 7446b98..c610efc 100644
  
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..0f89c45
+index 0000000..5046113
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,165 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -282,5 +279,39 @@ index 0000000..0f89c45
 +void reset_flow_bitmap (void)
 +{
 +    
++}
++
++struct per_port_states {
++    /*Number of bytes sent*/    
++    u64 B;
++    /*Number of on-goinhg flows*/
++    u32 N;
++    u32 rtt_tot;
++    u64 Q, Q_min;
++    /*Number of packets received during the control interval*/
++    u64 n;
++    /*Feedback rate of this router*/
++    u8 R;
++};
++
++struct per_port_states states;
++
++void xcp_protocol (struct xdp_buff *xdp, u32 size)
++{
++    unsigned char *ptr;
++    const struct tcphdr *th;
++    u8 *feedback;
++    void *data = xdp->data;
++    states.n++;
++    states.B += (xdp->data_end - xdp->data);
++    states.Q = 100;
++//    th = tcp_hdr(skb);
++//    //Jump to the beginning of the TCP option
++//    ptr = (unsigned char *)(th + 1);
++//    //Jump to beginning of the MF optionm
++//    ptr += 16;
++//    feedback = ptr + 2;
++//    if(*feedback > states.R)
++//        *feedback = states.R;
 +}
 +
