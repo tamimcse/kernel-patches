@@ -101,10 +101,10 @@ index 69c91d1..d39005c 100644
  
 diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
 new file mode 100644
-index 0000000..b309412
+index 0000000..549df0b
 --- /dev/null
 +++ b/include/net/xdp_monitor.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,29 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -126,22 +126,9 @@ index 0000000..b309412
 +#include <linux/notifier.h>
 +#include <linux/refcount.h>
 +
-+struct flow_bitmap_2 {
-+    u64 arr1[1024];
-+    u64 arr2[1024];
-+    u64 port[1024];
-+};
 +
-+struct flow_arr {
-+    u8 arr1[65536];
-+    u8 arr2[65536];
-+};
 +
-+struct flow_bitmap_3 {
-+    u64 arr1[64];
-+    u64 arr2[16];
-+    u64 arr3[16];
-+};
++
 +
 +bool flow_seen (u32 ip, u16 port);
 +void reset_flow_bitmap (void);
@@ -162,10 +149,10 @@ index 7446b98..c610efc 100644
  
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..23a303e
+index 0000000..0f89c45
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,131 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -178,6 +165,7 @@ index 0000000..23a303e
 +
 +#include <net/xdp_monitor.h>
 +
++/*Using Cuckoo filter to check if we have seen this flow*/
 +u8 cf[16384];
 +#define FINGERPRINT(X) ((X) % 256)
 +#define HASH(X) (((X) * 64) % 16381)
@@ -235,7 +223,13 @@ index 0000000..23a303e
 +    }
 +}
 +
-+struct flow_bitmap_2 bm2;
++/*Using Bittmap to check if we have seen this flow*/
++struct bitmap {
++    u64 arr1[1024];
++    u64 arr2[1024];
++    u64 port[1024];
++};
++struct bitmap bm2;
 +
 +//Old: 15 cycles New: 20 cycle
 +__always_inline bool flow_seen_bitmap2_v1 (u32 ip, u16 port)
