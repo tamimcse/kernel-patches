@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..2cd3646 100644
+index 69c91d1..7ad1ffa 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,7 @@
@@ -10,7 +10,7 @@ index 69c91d1..2cd3646 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -259,12 +260,23 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,12 +260,20 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -28,77 +28,10 @@ index 69c91d1..2cd3646 100644
  	struct fib_table *tb;
  	int err = -ENETUNREACH;
 -
-+        u64 tsc1 = 0, tsc2 = 0;
-+        bool b;
-+        int i = 0;
 +        
  	rcu_read_lock();
  
  	tb = fib_get_table(net, RT_TABLE_MAIN);
-@@ -273,6 +285,63 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
- 
- 	if (err == -EAGAIN)
- 		err = -ENETUNREACH;
-+        for (i = 0; i < 200; i++) {
-+            register uint64_t start, end, cost_of_tsc;                      
-+            unsigned long flag;                                
-+            register unsigned cyc_high1, cyc_low1;             
-+            register unsigned cyc_high2, cyc_low2;                     
-+            preempt_disable();                                 
-+            raw_local_irq_save(flag);                          
-+            raw_local_irq_disable();                           
-+            asm volatile("CPUID\n\t"                           \
-+                         "RDTSC\n\t"                           \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
-+                         :: RDTSC_DIRTY);                      
-+//            b = flow_seen(flp->daddr);                                            
-+            asm volatile("RDTSCP\n\t"                          \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         "CPUID\n\t"                           \
-+                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
-+                         :: RDTSC_DIRTY);                      
-+            raw_local_irq_enable();                            
-+            raw_local_irq_restore(flag);                       
-+            preempt_enable();                                  
-+            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
-+            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
-+            cost_of_tsc = end - start;
-+//            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", cost_of_tsc);
-+
-+            preempt_disable();                                 
-+            raw_local_irq_save(flag);                          
-+            raw_local_irq_disable();                           
-+            asm volatile("CPUID\n\t"                           \
-+                         "RDTSC\n\t"                           \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
-+                         :: RDTSC_DIRTY);                      
-+//            b = flow_seen(flp->saddr, flp->fl4_sport);                                            
-+            asm volatile("RDTSCP\n\t"                          \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         "CPUID\n\t"                           \
-+                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
-+                         :: RDTSC_DIRTY);                      
-+            raw_local_irq_enable();                            
-+            raw_local_irq_restore(flag);                       
-+            preempt_enable();                                  
-+            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
-+            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
-+            
-+//            if (b) {
-+//                pr_err("Flow Seen. Cost = %llu !!!!!", (end-start - cost_of_tsc));
-+//            } else {
-+//                pr_err("Flow not seen. Cost = %llu  $$$$$$$$$", (end-start - cost_of_tsc));
-+//            }   
-+        }
- 
- 	rcu_read_unlock();
- 
 diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
 new file mode 100644
 index 0000000..edc9d67
@@ -146,7 +79,7 @@ index 7446b98..c610efc 100644
  obj-$(CONFIG_BPFILTER) += bpfilter/
  
 diff --git a/net/ipv4/ip_input.c b/net/ipv4/ip_input.c
-index 3196cf5..0540a8f 100644
+index 3196cf5..0d4ac41 100644
 --- a/net/ipv4/ip_input.c
 +++ b/net/ipv4/ip_input.c
 @@ -130,6 +130,7 @@
@@ -157,7 +90,15 @@ index 3196cf5..0540a8f 100644
  
  #include <net/snmp.h>
  #include <net/ip.h>
-@@ -521,6 +522,14 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt,
+@@ -516,11 +517,76 @@ static struct sk_buff *ip_rcv_core(struct sk_buff *skb, struct net *net)
+ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt,
+ 	   struct net_device *orig_dev)
+ {
++        u64 tsc1 = 0, tsc2 = 0;
++        int i = 0;
++        
+ 	struct net *net = dev_net(dev);
+ 
  	skb = ip_rcv_core(skb, net);
  	if (skb == NULL)
  		return NET_RX_DROP;
@@ -167,17 +108,71 @@ index 3196cf5..0540a8f 100644
 +        xdp->data_end = skb->data + (skb->len - skb->data_len);
 +        xdp->data_meta = skb;
 +        
-+        xcp_protocol(xdp, skb->len - skb->data_len);
++        for (i = 0; i < 200; i++) {
++            register uint64_t start, end, cost_of_tsc;                      
++            unsigned long flag;                                
++            register unsigned cyc_high1, cyc_low1;             
++            register unsigned cyc_high2, cyc_low2;                     
++            preempt_disable();                                 
++            raw_local_irq_save(flag);                          
++            raw_local_irq_disable();                           
++            asm volatile("CPUID\n\t"                           \
++                         "RDTSC\n\t"                           \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                         :: RDTSC_DIRTY);                      
++//            b = flow_seen(flp->daddr);                                            
++            asm volatile("RDTSCP\n\t"                          \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         "CPUID\n\t"                           \
++                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                         :: RDTSC_DIRTY);                      
++            raw_local_irq_enable();                            
++            raw_local_irq_restore(flag);                       
++            preempt_enable();                                  
++            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++            cost_of_tsc = end - start;
++//            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", cost_of_tsc);
++
++            preempt_disable();                                 
++            raw_local_irq_save(flag);                          
++            raw_local_irq_disable();                           
++            asm volatile("CPUID\n\t"                           \
++                         "RDTSC\n\t"                           \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                         :: RDTSC_DIRTY);                      
++            xcp_protocol(xdp, skb->len - skb->data_len);                                            
++            asm volatile("RDTSCP\n\t"                          \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         "CPUID\n\t"                           \
++                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                         :: RDTSC_DIRTY);                      
++            raw_local_irq_enable();                            
++            raw_local_irq_restore(flag);                       
++            preempt_enable();                                  
++            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++            
++            pr_err("Cost of XCP = %llu !!!!!", (end - start - cost_of_tsc));   
++        }
++        
++        
 +        
  	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
  		       net, NULL, skb, dev, NULL,
  		       ip_rcv_finish);
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..a4bda3e
+index 0000000..cf31268
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,187 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -327,11 +322,10 @@ index 0000000..a4bda3e
 +void xcp_protocol (struct xdp_buff *xdp, u32 size)
 +{
 +    struct iphdr *iph;
-+    unsigned char *ptr;
 +    const struct tcphdr *th;
++    unsigned char *ptr;
 +    u64 Q;
 +    u8 *feedback;
-+    void *data = xdp->data;
 +    iph = (struct iphdr *)(xdp->data + ETH_HLEN);
 +    if (unlikely(iph->version != 4))
 +        return;
@@ -344,8 +338,19 @@ index 0000000..a4bda3e
 +//    pr_err("source ip=%pI4 port=%d", &(iph->saddr), th->source);
 +    if(likely(!flow_seen(iph->saddr, th->source))){
 +        states.N++;
-+        pr_err("Number of on-going flows = %u", states.N);
++//        pr_err("Number of on-going flows = %u", states.N);
 +    }
++    
++    //Jump to the beginning of the TCP option
++    ptr = (unsigned char *)(th + 1);
++    //Jump to beginning of the MF optionm
++    ptr += 16;
++    feedback = ptr + 2;
++    states.rtt_tot += *(ptr + 3);
++//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
++    if(*feedback > states.R)
++        *feedback = states.R;
++    
 +//    //Jump to the beginning of the TCP option
 +//    ptr = (unsigned char *)(th + 1);
 +//    //Jump to beginning of the MF optionm
