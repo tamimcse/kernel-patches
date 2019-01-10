@@ -1,37 +1,3 @@
-diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..7ad1ffa 100644
---- a/include/net/ip_fib.h
-+++ b/include/net/ip_fib.h
-@@ -25,6 +25,7 @@
- #include <linux/percpu.h>
- #include <linux/notifier.h>
- #include <linux/refcount.h>
-+#include <net/xdp_monitor.h>
- 
- struct fib_config {
- 	u8			fc_dst_len;
-@@ -259,12 +260,20 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
- 	return fib_get_table(net, id);
- }
- 
-+#ifdef __i386__
-+#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
-+#elif __x86_64__
-+#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
-+#else
-+# error unknown platform
-+#endif
-+
- static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
- 			     struct fib_result *res, unsigned int flags)
- {
- 	struct fib_table *tb;
- 	int err = -ENETUNREACH;
--
-+        
- 	rcu_read_lock();
- 
- 	tb = fib_get_table(net, RT_TABLE_MAIN);
 diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
 new file mode 100644
 index 0000000..edc9d67
@@ -79,7 +45,7 @@ index 7446b98..c610efc 100644
  obj-$(CONFIG_BPFILTER) += bpfilter/
  
 diff --git a/net/ipv4/ip_input.c b/net/ipv4/ip_input.c
-index 3196cf5..0d4ac41 100644
+index 3196cf5..127273d 100644
 --- a/net/ipv4/ip_input.c
 +++ b/net/ipv4/ip_input.c
 @@ -130,6 +130,7 @@
@@ -90,7 +56,22 @@ index 3196cf5..0d4ac41 100644
  
  #include <net/snmp.h>
  #include <net/ip.h>
-@@ -516,11 +517,76 @@ static struct sk_buff *ip_rcv_core(struct sk_buff *skb, struct net *net)
+@@ -148,6 +149,14 @@
+ #include <linux/netlink.h>
+ #include <net/dst_metadata.h>
+ 
++#ifdef __i386__
++#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
++#elif __x86_64__
++#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
++#else
++# error unknown platform
++#endif
++
+ /*
+  *	Process Router Attention IP option (RFC 2113)
+  */
+@@ -516,11 +525,76 @@ static struct sk_buff *ip_rcv_core(struct sk_buff *skb, struct net *net)
  int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt,
  	   struct net_device *orig_dev)
  {
