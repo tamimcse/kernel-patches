@@ -173,10 +173,10 @@ index 3196cf5..127273d 100644
  		       ip_rcv_finish);
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..5237cc1d
+index 0000000..93b7dd1
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,220 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -370,18 +370,15 @@ index 0000000..5237cc1d
 +{
 +    u64 S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
 +    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
-+
 +    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
-+
 +    mod_timer(&timer, jiffies + msecs_to_jiffies(states.rtt_a));
-+    pr_err("In calc_xcp_rate %llu", states.R);	
++    pr_err("In calc_xcp_rate. RTT_a=%u S=%llu Q=%llu N=%u %llu", states.rtt_a, S, states.Q, states.N, states.R);	
 +
 +    states.N = 0;
 +    states.n = 0;
 +    states.B = 0;
 +    states.rtt_tot = 0;
 +    states.Q = 300000;
-+
 +}
 +
 +int xcp_init(void)
