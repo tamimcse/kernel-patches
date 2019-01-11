@@ -1,9 +1,9 @@
 diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
 new file mode 100644
-index 0000000..e40daf6
+index 0000000..e115bdc
 --- /dev/null
 +++ b/include/net/xdp_monitor.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -31,6 +31,7 @@ index 0000000..e40daf6
 +void reset_flow_bitmap (void);
 +void xcp_protocol (struct xdp_buff *skb, u32 size);
 +int xcp_init(void);
++void reset_flow_bitmap (void);
 +
 +#endif /* __LINUX_NET_XDP_MONITOR_H__ */
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
@@ -173,10 +174,10 @@ index 3196cf5..127273d 100644
  		       ip_rcv_finish);
 diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
 new file mode 100644
-index 0000000..93b7dd1
+index 0000000..b2e1309
 --- /dev/null
 +++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,213 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -196,7 +197,7 @@ index 0000000..93b7dd1
 +#define MAX_KICK_CNT 10
 +
 +//15 cycles
-+__always_inline bool flow_seen (u32 ip, u16 port)
++__always_inline bool flow_seen_cuckoo_filter (u32 ip, u16 port)
 +{
 +    u8 tmp;
 +    int i;
@@ -256,7 +257,7 @@ index 0000000..93b7dd1
 +struct bitmap bm2;
 +
 +//Old: 15 cycles New: 20 cycle
-+__always_inline bool flow_seen_bitmap2_v1 (u32 ip, u16 port)
++__always_inline bool flow_seen (u32 ip, u16 port)
 +{
 +    u16 part1 = ip & 65535;
 +    u16 part2 = ip >> 16;
@@ -305,7 +306,7 @@ index 0000000..93b7dd1
 +
 +void reset_flow_bitmap (void)
 +{
-+    
++    memset(&bm2, 0, sizeof(bm2));
 +}
 +
 +struct per_port_states {
@@ -333,7 +334,8 @@ index 0000000..93b7dd1
 +    iph = (struct iphdr *)(xdp->data + ETH_HLEN);
 +    if (unlikely(iph->version != 4))
 +        return;
-+    th = (struct tcphdr *)(iph + iph->ihl * 4);
++    //Multiply by 4
++    th = (struct tcphdr *)(iph + (iph->ihl << 2));
 +    states.n++;
 +    states.B += (xdp->data_end - xdp->data);
 +    Q = 100;
@@ -345,23 +347,14 @@ index 0000000..93b7dd1
 +//        pr_err("Number of on-going flows = %u", states.N);
 +    }
 +    
-+    //Jump to the beginning of the TCP option
-+    ptr = (unsigned char *)(th + 1);
-+    //Jump to beginning of the MF optionm
-+    ptr += 16;
++    //Jump to the beginning of the TCP option and then beginning of the MF option
++    ptr = (unsigned char *)(th + sizeof(*th) + 16);
++
 +    feedback = ptr + 2;
 +    states.rtt_tot += *(ptr + 3);
 +//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
 +    if(*feedback > states.R)
 +        *feedback = states.R;
-+    
-+//    //Jump to the beginning of the TCP option
-+//    ptr = (unsigned char *)(th + 1);
-+//    //Jump to beginning of the MF optionm
-+//    ptr += 16;
-+//    feedback = ptr + 2;
-+//    if(*feedback > states.R)
-+//        *feedback = states.R;
 +}
 +
 +static struct timer_list timer;
@@ -372,13 +365,14 @@ index 0000000..93b7dd1
 +    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
 +    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
 +    mod_timer(&timer, jiffies + msecs_to_jiffies(states.rtt_a));
-+    pr_err("In calc_xcp_rate. RTT_a=%u S=%llu Q=%llu N=%u %llu", states.rtt_a, S, states.Q, states.N, states.R);	
++    pr_err("In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
 +
 +    states.N = 0;
 +    states.n = 0;
 +    states.B = 0;
 +    states.rtt_tot = 0;
 +    states.Q = 300000;
++    reset_flow_bitmap();
 +}
 +
 +int xcp_init(void)
