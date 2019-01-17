@@ -1222,7 +1222,7 @@ index 0000000..2e7c828
 Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
 diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
 new file mode 100644
-index 0000000..ae1b7b2
+index 0000000..8133465
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_kern.c
 @@ -0,0 +1,70 @@
@@ -1261,7 +1261,7 @@ index 0000000..ae1b7b2
 +
 +struct per_port_states states;
 +
-+SEC("xdp_fwd")
++SEC("xcp_router")
 +int xdp_fwd_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
