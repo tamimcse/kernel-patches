@@ -1,0 +1,1539 @@
+diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
+index 0f7a27f..e50c704 100644
+--- a/arch/x86/configs/x86_64_defconfig
++++ b/arch/x86/configs/x86_64_defconfig
+@@ -61,6 +61,11 @@ CONFIG_HIBERNATION=y
+ CONFIG_PM_DEBUG=y
+ CONFIG_PM_TRACE_RTC=y
+ CONFIG_ACPI_DOCK=y
++CONFIG_CPU_FREQ=y
++# CONFIG_CPU_FREQ_STAT is not set
++CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE=y
++CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
++CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+ CONFIG_X86_ACPI_CPUFREQ=y
+ CONFIG_PCI_MMCONFIG=y
+ CONFIG_PCIEPORTBUS=y
+@@ -70,13 +75,12 @@ CONFIG_HOTPLUG_PCI=y
+ CONFIG_BINFMT_MISC=y
+ CONFIG_IA32_EMULATION=y
+ CONFIG_NET=y
++CONFIG_PACKET=y
+ CONFIG_UNIX=y
+ CONFIG_XFRM_USER=y
+ CONFIG_INET=y
+ CONFIG_IP_MULTICAST=y
+ CONFIG_IP_ADVANCED_ROUTER=y
+-#CONFIG_IP_ROUTE_CLASSID=y
+-#CONFIG_IP_MULTIPLE_TABLES=y
+ #CONFIG_IP_ROUTE_MULTIPATH=y
+ CONFIG_IP_ROUTE_VERBOSE=y
+ CONFIG_IP_PNP=y
+@@ -96,8 +100,7 @@ CONFIG_TCP_CONG_ADVANCED=y
+ # CONFIG_TCP_CONG_WESTWOOD is not set
+ # CONFIG_TCP_CONG_HTCP is not set
+ CONFIG_TCP_MD5SIG=y
+-#CONFIG_IPV6=y
+-#CONFIG_IPV6_MULTIPLE_TABLES=y
++CONFIG_IPV6=y
+ CONFIG_INET6_AH=y
+ CONFIG_INET6_ESP=y
+ CONFIG_NETLABEL=y
+@@ -130,6 +133,7 @@ CONFIG_IP6_NF_TARGET_REJECT=y
+ CONFIG_IP6_NF_MANGLE=y
+ CONFIG_NET_SCHED=y
+ CONFIG_NET_EMATCH=y
++CONFIG_NET_CLS_ACT=y
+ CONFIG_HAMRADIO=y
+ CONFIG_CFG80211=y
+ CONFIG_MAC80211=y
+@@ -171,6 +175,7 @@ CONFIG_E1000E=y
+ CONFIG_SKY2=y
+ CONFIG_FORCEDETH=y
+ CONFIG_8139TOO=y
++CONFIG_R8169=y
+ CONFIG_FDDI=y
+ CONFIG_INPUT_POLLDEV=y
+ # CONFIG_INPUT_MOUSEDEV_PSAUX is not set
+@@ -194,11 +199,15 @@ CONFIG_HW_RANDOM=y
+ # CONFIG_HW_RANDOM_INTEL is not set
+ # CONFIG_HW_RANDOM_AMD is not set
+ CONFIG_NVRAM=y
++CONFIG_HPET=y
++# CONFIG_HPET_MMAP is not set
+ CONFIG_I2C_I801=y
+ CONFIG_WATCHDOG=y
+ CONFIG_AGP=y
+ CONFIG_AGP_AMD64=y
+ CONFIG_AGP_INTEL=y
++CONFIG_DRM=y
++CONFIG_DRM_I915=y
+ CONFIG_FB_MODE_HELPERS=y
+ CONFIG_FB_TILEBLITTING=y
+ CONFIG_FB_EFI=y
+@@ -207,7 +216,16 @@ CONFIG_VGACON_SOFT_SCROLLBACK=y
+ CONFIG_LOGO=y
+ # CONFIG_LOGO_LINUX_MONO is not set
+ # CONFIG_LOGO_LINUX_VGA16 is not set
+-
++CONFIG_SOUND=y
++CONFIG_SND=y
++CONFIG_SND_SEQUENCER=y
++CONFIG_SND_SEQ_DUMMY=y
++CONFIG_SND_MIXER_OSS=y
++CONFIG_SND_PCM_OSS=y
++CONFIG_SND_SEQUENCER_OSS=y
++CONFIG_SND_HRTIMER=y
++CONFIG_SND_HDA_INTEL=y
++CONFIG_SND_HDA_HWDEP=y
+ CONFIG_HIDRAW=y
+ CONFIG_HID_GYRATION=y
+ CONFIG_LOGITECH_FF=y
+@@ -236,6 +254,7 @@ CONFIG_RTC_CLASS=y
+ CONFIG_DMADEVICES=y
+ CONFIG_EEEPC_LAPTOP=y
+ CONFIG_AMD_IOMMU=y
++CONFIG_INTEL_IOMMU=y
+ # CONFIG_INTEL_IOMMU_DEFAULT_ON is not set
+ CONFIG_EFI_VARS=y
+ CONFIG_EXT4_FS=y
+@@ -253,6 +272,7 @@ CONFIG_MSDOS_FS=y
+ CONFIG_VFAT_FS=y
+ CONFIG_PROC_KCORE=y
+ CONFIG_TMPFS_POSIX_ACL=y
++CONFIG_HUGETLBFS=y
+ CONFIG_NFS_FS=y
+ CONFIG_NFS_V3_ACL=y
+ CONFIG_NFS_V4=y
+@@ -278,6 +298,7 @@ CONFIG_DEBUG_STACKOVERFLOW=y
+ # CONFIG_DEBUG_RODATA_TEST is not set
+ CONFIG_DEBUG_BOOT_PARAMS=y
+ CONFIG_OPTIMIZE_INLINING=y
++CONFIG_UNWINDER_ORC=y
+ CONFIG_SECURITY=y
+ CONFIG_SECURITY_NETWORK=y
+ CONFIG_SECURITY_SELINUX=y
+@@ -305,292 +326,20 @@ CONFIG_ATH9K_HTC=m
+ CONFIG_ATH9K_HTC_DEBUGFS=y
+ 
+ 
+-CONFIG_TCP_INIGO=y
+-
+-#Veth, Network namespace, and NetEm setup (Needed for Mininet)
+ CONFIG_VETH=m
+ CONFIG_NET_NS=y
+ 
+-#Packet scheduling
+-CONFIG_NET_SCH_NETEM=m
+-CONFIG_NET_SCH_HTB=m
+-CONFIG_NET_SCH_TBF=m 
+-CONFIG_NET_SCH_MF=m
+-#CONFIG_NET_SCH_CLK_JIFFIES=y 
+-#CONFIG_NET_SCH_CLK_GETTIMEOFDAY=y
+-#CONFIG_NET_SCH_CLK_CPU=y
+-CONFIG_NET_SCH_HFSC=m 
+-CONFIG_NET_SCH_PRIO=m 
+-CONFIG_NET_SCH_RED=m 
+-CONFIG_NET_SCH_SFQ=m
+-CONFIG_NET_SCH_CBQ=m
+-CONFIG_NET_SCH_PIE=m
+-CONFIG_NET_SCH_FQ=m  
+-#CONFIG_NET_SCH_TEQL=y 
+-#CONFIG_NET_SCH_GRED=y 
+-CONFIG_NET_SCH_CODEL=m
+-CONFIG_NET_SCH_FQ_CODEL=m
+-
+-#packet classification
+-CONFIG_NET_CLS_RSVP=m
+-CONFIG_NET_CLS_RSVP6=m
+-CONFIG_NET_CLS_U32=m
+-CONFIG_NET_CLS_FLOW=m
+-CONFIG_NET_CLS_CGROUP=m
+-CONFIG_NET_ACT_PEDIT=m
+-CONFIG_NET_ACT_NAT=m
+-CONFIG_NET_ACT_SKBEDIT=m
+-CONFIG_NET_ACT_CSUM=m
+-CONFIG_NET_ACT_VLAN=m
+-CONFIG_NET_ACT_CONNMARK=m
+-CONFIG_NET_ACT_SKBMOD=m
+-
+-
+-#Add DiffServ (apply packet classifier) 
+-#CONFIG_NET_QOS=y 
+-#CONFIG_NET_SCH_INGRESS=y
+-#CONFIG_NET_SCH_DSMARK=y 
+-
+-#V4L2 and UVC driver
+-CONFIG_VIDEO_DEV=m
+-CONFIG_MEDIA_SUPPORT=m
+-CONFIG_MEDIA_CAMERA_SUPPORT=y
+-CONFIG_MEDIA_USB_SUPPORT=y
+-CONFIG_USB_VIDEO_CLASS=m
+-CONFIG_USB_VIDEO_CLASS_INPUT_EDEV=y
+-CONFIG_VIDEOBUF2_CORE=m
+-CONFIG_VIDEOBUF2_MEMOPS=m
+-CONFIG_VIDEOBUF2_VMALLOC=m
+-
+-#Enable tcp_probe
+-CONFIG_NET_TCPPROBE=m
+-
+-#enable switchdev
+-CONFIG_NET_SWITCHDEV=y
+-CONFIG_NET_DEVLINK=m
+-CONFIG_VLAN_8021Q=m
+-
+-CONFIG_ROCKER_DEV=n
+-
+-#Ethernet card
+-CONFIG_ETHERNET=y
+-CONFIG_X86=y
+-CONFIG_PCI=y
+-
+-#PCI card virtualization
+-CONFIG_PCI_IOV=y
+-
+-#enable RTL8111/8168/8411 PCI Express Gigabit Ethernet Interface
+-CONFIG_R8169=m
+-
+-#Mellanox NIC and Switch. Requisite modules such as I2C, PCI, IOMMU, HWMON enabled by default
+-CONFIG_NET_VENDOR_MELLANOX=y
+-CONFIG_MLXSW_PCI=m
+-CONFIG_MLXSW_CORE=m
+-CONFIG_MLXSW_SWITCHX2=m
+-CONFIG_MLXSW_SPECTRUM=m
+-CONFIG_MLX5_CORE=m
+-CONFIG_MLX5_CORE_EN=y
+-
+-#Netronome
+-CONFIG_NET_VENDOR_NETRONOME=y
+-CONFIG_NFP=m
+-CONFIG_NFP_DEBUG=y
+-CONFIG_NFP_NETVF=m
+-CONFIG_NFP_NET_DEBUG=y
+-CONFIG_NFP_NET=y
+-CONFIG_PCI_MSI=y
+-CONFIG_GENERIC_MSI_IRQ=y
+-
+-#Intel Ethernet cards 
+-
+-#Intel FlexPipe
+-CONFIG_FM10K=m
+-
+-#Intel XL710 family 
+-CONFIG_I40E=m
+-CONFIG_I40E_DCB=y
+-CONFIG_I40EVF=m
+-CONFIG_I40E_FCOE=y
+-
+-#Intel 10GbE family NIC
+-CONFIG_IXGBE=m
+-CONFIG_IXGBEVF=m
+ 
+-#NVIDIA
+-CONFIG_DRM_NOUVEAU=m
+-CONFIG_DRM_NOUVEAU_BACKLIGHT=y
+-
+-#intel GPU
+-CONFIG_DRM=y
+-CONFIG_DRM_I915=y
+-CONFIG_DRM_I915_PRELIMINARY_HW_SUPPORT=y
+-CONFIG_DRM_I915_USERPTR=y
+-
+-#Intel Communication controller
+-CONFIG_WATCHDOG_CORE=y
+-CONFIG_INTEL_MEI=y
+-CONFIG_INTEL_MEI_ME=y
+-CONFIG_VXLAN=m
+-
+-#USB
+-CONFIG_USB_ARCH_HAS_XHCI=y
+-CONFIG_USB_XHCI_HCD=y
+-
+-#DCCP
+-CONFIG_IP_DCCP=m
+-CONFIG_NET_DCCPPROBE=m
+-CONFIG_IP_DCCP_DEBUG=y
+-CONFIG_IP_DCCP_CCID2_DEBUG=y
+-CONFIG_IP_DCCP_CCID3=y
+-CONFIG_IP_DCCP_CCID3_DEBUG=y
+-
+-#SCTP
+-CONFIG_IP_SCTP=m
+-
+-#BBR
+-CONFIG_TCP_CONG_BBR=y
+-CONFIG_TCP_CONG_CDG=y
+-
+-#Wireguard Prereq
+-CONFIG_NET_UDP_TUNNEL=m
+-CONFIG_NETFILTER_XT_MATCH_HASHLIMIT=y
+-CONFIG_CRYPTO_BLKCIPHER=y
+-CONFIG_PADATA=y
+-
+-#Wireguard
+-CONFIG_WIREGUARD=n
+-CONFIG_WIREGUARD_DEBUG=n
+-CONFIG_WIREGUARD_PARALLEL=n 
+-
+-#netfilter
+-CONFIG_NETFILTER_XT_MATCH_IPRANGE=m
+-CONFIG_NETFILTER_NETLINK=m
+-CONFIG_NETFILTER_XTABLES=m
+-CONFIG_NETFILTER_XT_MATCH_CLUSTER=m
+-CONFIG_NETFILTER_XT_TARGET_CLASSIFY=m
+-CONFIG_NETFILTER_XT_TARGET_CONNMARK=m
+-CONFIG_NETFILTER_XT_MATCH_BPF=m
+-CONFIG_NETFILTER_XT_TARGET_DSCP=m
+-CONFIG_NETFILTER_XT_MATCH_DSCP=m
+-CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP=m
+-CONFIG_NETFILTER_XT_MATCH_IPVS=m
+-CONFIG_IP_NF_TARGET_CLUSTERIP=y
+-CONFIG_IP_NF_TARGET_ECN=y
+-CONFIG_IP_NF_TARGET_TTL=y
+-CONFIG_IP_NF_RAW=y
+-
+-
+-#nftable
+-CONFIG_NF_TABLES=m
+-CONFIG_NFT_PAYLOAD=m
+-CONFIG_NFT_EXTHDR=m
+-CONFIG_NFT_META=m
+-CONFIG_NFT_CT=m
+-CONFIG_NFT_RBTREE=m
+-CONFIG_NFT_HASH=m
+-CONFIG_NFT_SET_HASH=m
+-CONFIG_NFT_COUNTER=m
+-CONFIG_NFT_LOG=m
+-CONFIG_NFT_LIMIT=m
+-CONFIG_NFT_NAT=m
+-CONFIG_NFT_REDIR=m
+-CONFIG_NFT_QUEUE=m
+-CONFIG_NFT_MASQ=m
+-CONFIG_NFT_QUOTA=m
+-CONFIG_NFT_COMPAT=m
+-CONFIG_NFT_REJECT=m
+-CONFIG_NFT_REJECT_IPV4=m
+-CONFIG_NFT_CHAIN_ROUTE_IPV4=m
+-CONFIG_NFT_CHAIN_NAT_IPV4=m
+-CONFIG_NFT_CHAIN_ROUTE_IPV6=m
+-CONFIG_NFT_CHAIN_NAT_IPV6=m
+-CONFIG_NF_TABLES_BRIDGE=y
+-CONFIG_NF_TABLES_NETDEV=y
+-CONFIG_NF_TABLES_INET=y
+-CONFIG_NF_TABLES_IPV4=y
+-CONFIG_NF_TABLES_IPV6=y
+-CONFIG_NF_DUP_NETDEV=m
+-CONFIG_NFT_DUP_NETDEV=m
+-CONFIG_NFT_FWD_NETDEV=m
+-CONFIG_NF_CONNTRACK_BROADCAST=m
+-CONFIG_NF_CONNTRACK_H323=m
+-CONFIG_NFT_REJECT_IPV6=m
+-CONFIG_NFT_REJECT_INET=m
+-CONFIG_NFT_MASQ_IPV4=m
+-CONFIG_NFT_REDIR_IPV4=m
+-CONFIG_NFT_MASQ_IPV6=m
+-CONFIG_NFT_REDIR_IPV6=m
+-CONFIG_NFT_BRIDGE_META=m
+-CONFIG_NFT_BRIDGE_REJECT=m
+-
+-#IPVS
+-CONFIG_IP_VS=m
+-CONFIG_IP_VS_IPV6=y
+-CONFIG_IP_VS_DEBUG=y
+-CONFIG_IP_VS_TAB_BITS=12
+-CONFIG_IP_VS_PROTO_TCP
+-CONFIG_IP_VS_RR=m
+-CONFIG_IP_VS_DH=m
+-CONFIG_IP_VS_SH=m
+-CONFIG_IP_VS_NQ=m
+-CONFIG_IP_VS_NFCT=y
+-
+-# Open vSwitch
+-CONFIG_OPENVSWITCH=m
+-CONFIG_OPENVSWITCH_GRE=m
+-CONFIG_OPENVSWITCH_GENEVE=m
+-
+-#Enable protocols in switch
+-CONFIG_MPLS_ROUTING=m
+-CONFIG_NET_DSA=m
+-CONFIG_NET_DSA_TAG_BRCM=y
+-CONFIG_NET_DSA_TAG_DSA=y
+-CONFIG_NET_DSA_TAG_EDSA=y
+-CONFIG_NET_DSA_TAG_TRAILER=y
+-CONFIG_NET_DSA_TAG_QCA=y
+-#CONFIG_BRIDGE_VLAN_FILTERING=y
+-CONFIG_GENEVE=m
+-CONFIG_BONDING=m
+-CONFIG_IPVLAN=m
+-CONFIG_IPVTAP=m
+-CONFIG_MACVLAN=m
+-CONFIG_MACVTAP=m
+-CONFIG_TUN=m
+-CONFIG_TAP=m
+-
+-
+-#IP options
+-#CONFIG_IP_FIB_TRIE_STATS=y
+-
+-#Enable VRF
+-CONFIG_NET_VRF=m
+-CONFIG_NET_L3_MASTER_DEV=y
+-
+-
+-#Enable rocker switch
+-CONFIG_NET_VENDOR_ROCKER=y
+-CONFIG_ROCKER=m
+-CONFIG_BRIDGE=y
+-
+-#DCB
+-CONFIG_DCB=y
+-
+-#FCOE RDMA
+-CONFIG_FCOE=m
+-CONFIG_LIBFCOE=m
+-CONFIG_LIBFC=m 
+-
+-#Enable Qlogic
+-CONFIG_NET_VENDOR_QLOGIC=y
+-CONFIG_QED=m
+-CONFIG_QED_LL2=y
+-CONFIG_QED_SRIOV=y
+-CONFIG_QEDE=m
+-CONFIG_QED_RDMA=y
+-
+-#Mellanox Infiniband
+-CONFIG_MLX5_INFINIBAND=m
++#Needed for tc bpf classifier and action
++CONFIG_NET_CLS=y
++CONFIG_NET_EGRESS=y
++CONFIG_NET_INGRESS=y
++#enable sch_clsact
++CONFIG_NET_SCH_INGRESS=m
++#bpf classifier
++CONFIG_NET_CLS_BPF=m
++#bpf action
++CONFIG_NET_ACT_BPF=y
+ 
+ #Enable init options
+ CONFIG_EPOLL=y
+@@ -606,294 +355,10 @@ CONFIG_HAVE_EBPF_JIT=y
+ CONFIG_NET_ACT_POLICE=m
+ CONFIG_NET_ACT_GACT=m
+ CONFIG_DUMMY=m
+-
+-#Enable Sample
+ CONFIG_SAMPLES=y
+-
+-#Enable Crypto API (AF_ALG sock)
+-CONFIG_CRYPTO_USER_API=m
+-CONFIG_CRYPTO_USER_API_HASH=m
+-CONFIG_CRYPTO_USER_API_SKCIPHER=m
+-
+-#Enable IOMMU, VFIO, Virtio and eventfd
+-CONFIG_IOMMU_SUPPORT=y
+-CONFIG_IOMMU_API=y
+-CONFIG_INTEL_IOMMU=y
+-CONFIG_INTEL_IOMMU_SVM=y
+-CONFIG_IRQ_REMAP=y
+-CONFIG_VFIO=m
+-CONFIG_VFIO_PLATFORM=m
+-CONFIG_VFIO_PCI=m
+-CONFIG_VGA_ARB=y
+-CONFIG_VFIO_PCI_VGA=y
+-CONFIG_EVENTFD=y
+-CONFIG_VIRTIO=m
+-CONFIG_VIRTIO_PCI=m
+-CONFIG_VIRTIO_NET=m
+-CONFIG_VIRTIO_RING=m
+-CONFIG_VIRTIO_BALLOON=m
+-CONFIG_VIRTIO_BLK=m 
+-
+-#
+-# HD-Audio
+-#
+-CONFIG_SND_PCI=y
+-CONFIG_SOUND=y
+-CONFIG_SND=y
+-#CONFIG_SND_SEQUENCER=y
+-#CONFIG_SND_SEQ_DUMMY=y
+-#CONFIG_SND_MIXER_OSS=y
+-#CONFIG_SND_PCM_OSS=y
+-#CONFIG_SND_SEQUENCER_OSS=y
+-#CONFIG_SND_HRTIMER=y
+-CONFIG_SND_HDA=m
+-CONFIG_SND_HDA_INTEL=m
+-CONFIG_SND_HDA_HWDEP=y
+-CONFIG_SND_HDA_RECONFIG=y
+-CONFIG_SND_HDA_INPUT_BEEP=y
+-CONFIG_SND_HDA_INPUT_BEEP_MODE=0
+-CONFIG_SND_HDA_PATCH_LOADER=y
+-CONFIG_SND_HDA_CODEC_REALTEK=m
+-CONFIG_SND_HDA_CODEC_ANALOG=m
+-CONFIG_SND_HDA_CODEC_SIGMATEL=m
+-CONFIG_SND_HDA_CODEC_VIA=m
+-CONFIG_SND_HDA_CODEC_HDMI=m
+-CONFIG_SND_HDA_CODEC_CIRRUS=m
+-CONFIG_SND_HDA_CODEC_CONEXANT=m
+-CONFIG_SND_HDA_CODEC_CA0110=m
+-CONFIG_SND_HDA_CODEC_CA0132=m
+-CONFIG_SND_HDA_CODEC_CA0132_DSP=y
+-CONFIG_SND_HDA_CODEC_CMEDIA=m
+-CONFIG_SND_HDA_CODEC_SI3054=m
+-CONFIG_SND_HDA_GENERIC=m
+-CONFIG_SND_HDA_POWER_SAVE_DEFAULT=0
+-CONFIG_SND_HDA_CORE=m
+-CONFIG_SND_HDA_DSP_LOADER=y
+-CONFIG_SND_HDA_I915=y
+-#CONFIG_SND_HDA_EXT_CORE=m
+-#CONFIG_SND_HDA_PREALLOC_SIZE=64
+-#CONFIG_SND_SPI=y
+-#CONFIG_SND_USB=y
+-#CONFIG_SND_USB_AUDIO=m
+-#CONFIG_SND_USB_UA101=m
+-#CONFIG_SND_USB_USX2Y=m
+-#CONFIG_SND_USB_CAIAQ=m
+-#CONFIG_SND_USB_CAIAQ_INPUT=y
+-#CONFIG_SND_USB_US122L=m
+-#CONFIG_SND_USB_6FIRE=m
+-#CONFIG_SND_USB_HIFACE=m
+-#CONFIG_SND_BCD2000=m
+-#CONFIG_SND_USB_LINE6=m
+-#CONFIG_SND_USB_POD=m
+-#CONFIG_SND_USB_PODHD=m
+-#CONFIG_SND_USB_TONEPORT=m
+-#CONFIG_SND_USB_VARIAX=m
+-#CONFIG_SND_FIREWIRE=y
+-#CONFIG_SND_FIREWIRE_LIB=m
+-#CONFIG_SND_DICE=m
+-#CONFIG_SND_OXFW=m
+-#CONFIG_SND_ISIGHT=m
+-#CONFIG_SND_SCS1X=m
+-#CONFIG_SND_FIREWORKS=m
+-#CONFIG_SND_BEBOB=m
+-#CONFIG_SND_FIREWIRE_DIGI00X=m
+-#CONFIG_SND_FIREWIRE_TASCAM=m
+-CONFIG_SND_PCMCIA=y
+-#CONFIG_SND_VXPOCKET=m
+-#CONFIG_SND_PDAUDIOCF=m
+-#CONFIG_SND_SOC=m
+-#CONFIG_SND_SOC_AC97_BUS=y
+-#CONFIG_SND_SOC_GENERIC_DMAENGINE_PCM=y
+-#CONFIG_SND_SOC_COMPRESS=y
+-#CONFIG_SND_SOC_TOPOLOGY=y
+-#CONFIG_SND_ATMEL_SOC=m
+-#CONFIG_SND_DESIGNWARE_I2S=m
+-
+-
+-#Needed for tc bpf classifier and action
+-CONFIG_NET_CLS=y
+-CONFIG_NET_CLS_ACT=y
+-CONFIG_NET_EGRESS=y
+-CONFIG_NET_INGRESS=y
+-#enable sch_clsact
+-CONFIG_NET_SCH_INGRESS=m
+-#bpf classifier
+-CONFIG_NET_CLS_BPF=m
+-#bpf action
+-CONFIG_NET_ACT_BPF=y
+-#Transmit Packet Steering
+-#CONFIG_XPS=y
+-#PF_PACKET socket
+-CONFIG_PACKET=y
+-
+-#KVM
+-CONFIG_KVM=y
+-CONFIG_KVM_INTEL=m
+-#CONFIG_IKCONFIG=y
+-#CONFIG_IKCONFIG_PROC=y
+-
+-
+-
+-#sysfs
+-#CONFIG_SYSFS_SYSCALL=y
+-#CONFIG_SYSFS=y
+-
+-#Packet generator
+-CONFIG_NET_PKTGEN=m
+-CONFIG_PROC_FS=y
+-
+-CONFIG_CFS_BANDWIDTH=y
+-CONFIG_FAIR_GROUP_SCHED=y
+-CONFIG_PROC_PID_CPUSET=y
+-#CONFIG_RT_GROUP_SCHED=y
+-#CONFIG_PREEMPT_RT_FULL=y
+-
+-
+-#Needed for embedded Linux
+-
+-CONFIG_ARCH_MULTIPLATFORM=y
+-CONFIG_MMU=y
+-CONFIG_BLOCK=y
+-CONFIG_RAMFS=y
+-CONFIG_SCSI_FC_ATTRS=m
+-CONFIG_SCSI=m
+-
+-CONFIG_JFFS2_FS=y
+-CONFIG_JFFS2_FS_DEBUG=1
+-CONFIG_JFFS2_FS_WBUF_VERIFY=y
+-CONFIG_JFFS2_SUMMARY=y
+-CONFIG_JFFS2_FS_XATTR=y
+-CONFIG_JFFS2_COMPRESSION_OPTIONS=y
+-CONFIG_JFFS2_LZO=y
+-CONFIG_JFFS2_RUBIN=y
+-
+-
+-CONFIG_SQUASHFS=y
+-CONFIG_SQUASHFS_LZO=y
+-CONFIG_SQUASHFS_XZ=y
+-CONFIG_ROMFS_FS=y
+-
+-CONFIG_MTD=y
+-CONFIG_MTD_CHAR=y
+-CONFIG_MTD_MTDRAM=y
+-CONFIG_MTD_BLOCK=y
+-CONFIG_MTD_BLOCK_RO=y
+-CONFIG_MTD_DEVICE=y
+-CONFIG_ETRAX_AXISFLASHMAP=y
+-CONFIG_ETRAX_ARCH_V32=y
+-CONFIG_ETRAX_ARCH_V10=y
+-CONFIG_GENERIC_IO=y
+-CONFIG_MTD_PARTITIONS=y
+-CONFIG_FTL=y
+-CONFIG_NFTL_RW=y
+-
+-CONFIG_LOGFS=y
+-
+-CONFIG_MTD_UBI=y
+-CONFIG_UBIFS_FS=y
+-CONFIG_UBIFS_FS_ADVANCED_COMPR=y
+-CONFIG_UBIFS_FS_LZO=y
+-CONFIG_UBIFS_FS_ZLIB=y
+-CONFIG_UBIFS_FS_ENCRYPTION=y
+-
+-CONFIG_YAFFS_FS=y
+-CONFIG_YAFFS_YAFFS1=y
+-CONFIG_YAFFS_YAFFS2=y
+-CONFIG_LZO=y
+-
+-CONFIG_HAVE_KERNEL_GZIP=y
+-CONFIG_HAVE_KERNEL_BZIP2=y
+-CONFIG_HAVE_KERNEL_LZMA=y
+-CONFIG_HAVE_KERNEL_XZ=y
+-CONFIG_HAVE_KERNEL_LZO=y
+-CONFIG_HAVE_KERNEL_LZ4=y
+-
+-
+-#Enable CPU shutdown if it's idle
+-CONFIG_CPU_IDLE=y
+-CONFIG_CPU_HOTPLUG=y
+-#Enable dynamic CPU freequency to conserve power
+-CONFIG_CPU_FREQ=y
+-# CONFIG_CPU_FREQ_STAT is not set
+-CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE=y
+-CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
+-CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+-
+-#Copied from NPS-400 config
+-CONFIG_BLK_DEV_RAM=y
+-CONFIG_BLK_DEV_RAM_COUNT=1
+-CONFIG_BLK_DEV_RAM_SIZE=2048
+-CONFIG_DEBUG_INFO=y
+-CONFIG_DEBUG_MEMORY_INIT=y
+-CONFIG_ENABLE_DEFAULT_TRACERS=y
+-#CONFIG_PREEMPT=y
+-#CONFIG_EMBEDDED=y
+-CONFIG_IKCONFIG=y
+-CONFIG_IKCONFIG_PROC=y
+-CONFIG_SYSCTL_SYSCALL=y
+-#CONFIG_NO_HZ_IDLE=y
+-CONFIG_PERF_EVENTS=y
+-#CONFIG_ARC_PLAT_EZNPS=y
+-#CONFIG_ARC_CACHE_LINE_SHIFT=5
+-#CONFIG_ARC_KVADDR_SIZE=402
+-#CONFIG_ARC_EMUL_UNALIGNED=y
+-#CONFIG_ARC_UBOOT_SUPPORT=y
+-
+-#DPDK
+-CONFIG_RTE_LIBRTE_PMD_PCAP=y
+-CONFIG_HUGETLB_PAGE=y
+-CONFIG_HUGETLBFS=y
+-CONFIG_PROC_PAGE_MONITOR=y 
+-CONFIG_HPET=y
+-CONFIG_HPET_MMAP=y
+-CONFIG_HPET_MMAP_DEFAULT=y
+-#Enables userspace IO
+-CONFIG_UIO_PCI_GENERIC=m
+-CONFIG_UIO=m
+-
+-#Freescale DPAA
+-#CONFIG_FSL_DPAA_ETH=m
+-#CONFIG_FSL_DPAA=y
+-#CONFIG_FSL_FMAN=m
+-#CONFIG_NET_VENDOR_FREESCALE=y
+-#CONFIG_FSL_SOC=y
+-#CONFIG_FSL_SOC_BOOKE=y
+-#CONFIG_PPC_85xx=y
+-#CONFIG_PPC_BOOK3E=y
+-#CONFIG_PPC_BOOK3E_64=y
+-#CONFIG_ARCH_LAYERSCAPE=y
+-#This is needed for drivers relevent to other architecture
+-#CONFIG_COMPILE_TEST=y
+-#CONFIG_FS_ENET=m
+-#CONFIG_PPC_MPC512x=y
+-#CONFIG_6xx=y
+-#CONFIG_CPM1=y
+-#CONFIG_CPM2=y
+-#CONFIG_MPC8560=y
+-#CONFIG_MPC8560_ADS=y
+-#Freescale IOMMU
+-#CONFIG_FSL_PAMU=y
+-
+-#Enable NIC DMA (On my laptop, enabling these makes things slow)
+-#CONFIG_NET_DMA=y
+-#CONFIG_DMA_ENGINE=y
+-#CONFIG_INTEL_IOATDMA=m
+-
+-#Enable Intel DDIO (DCA), although y by default (On my laptop, enabling these makes things slow)
+-#CONFIG_DCA=m
+-#CONFIG_IXGBE_DCA=y
+-#CONFIG_IGB=m
+-
+-#Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
+-CONFIG_NO_HZ_FULL=y
+-CONFIG_RCU_NOCB_CPU=y
+-CONFIG_IRQ_FORCED_THREADING=y
+-
+-#Processor family
+-#Intel Processor family 6 or higher
+-#CONFIG_MCORE2=y
+-#Optimize for AMD Opteron/Athlon64/Hammer/K8 CPUs
+-#CONFIG_MK8=y
+-#Following are generated by default, so change it if appropiate 
+-#CONFIG_X86_L1_CACHE_SHIFT=7 
+-
++CONFIG_BPF_SYSCALL=y
++CONFIG_BPF=y
++#CONFIG_BPF_EVENTS=y
++CONFIG_BPF_JIT=y
++CONFIG_HAVE_BPF_JIT=y
++CONFIG_HAVE_EBPF_JIT=y
+diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
+new file mode 100644
+index 0000000..b264ab2
+--- /dev/null
++++ b/include/net/xdp_monitor.h
+@@ -0,0 +1,113 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ *   This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ */
++#ifndef __LINUX_NET_XDP_MONITOR_H__
++#define __LINUX_NET_XDP_MONITOR_H__
++
++#include <net/flow.h>
++#include <linux/seq_file.h>
++#include <linux/rcupdate.h>
++#include <net/fib_notifier.h>
++#include <net/fib_rules.h>
++#include <net/inetpeer.h>
++#include <linux/percpu.h>
++#include <linux/notifier.h>
++#include <linux/refcount.h>
++#include <linux/ip.h>
++#include <linux/timer.h>
++
++struct pkthdr {
++        /*Ethernet header starts here. */
++	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
++	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
++	__be16		h_proto;		/* packet type ID field	*/
++        
++        /*IP header starts here. */
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	__u8	ihl:4,
++		version:4;
++#elif defined (__BIG_ENDIAN_BITFIELD)
++	__u8	version:4,
++  		ihl:4;
++#else
++#error	"Please fix <asm/byteorder.h>"
++#endif
++	__u8	tos;
++	__be16	tot_len;
++	__be16	id;
++	__be16	frag_off;
++	__u8	ttl;
++	__u8	protocol;
++	__sum16	check_ip;
++	__be32	saddr;
++	__be32	daddr;
++	/*The IP header options start here. */
++        /*TCP header starts here. */        
++	__be16	source;
++	__be16	dest;
++	__be32	seq;
++	__be32	ack_seq;
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	__u16	res1:4,
++		doff:4,
++		fin:1,
++		syn:1,
++		rst:1,
++		psh:1,
++		ack:1,
++		urg:1,
++		ece:1,
++		cwr:1;
++#elif defined(__BIG_ENDIAN_BITFIELD)
++	__u16	doff:4,
++		res1:4,
++		cwr:1,
++		ece:1,
++		urg:1,
++		ack:1,
++		psh:1,
++		rst:1,
++		syn:1,
++		fin:1;
++#else
++#error	"Adjust your <asm/byteorder.h> defines"
++#endif	
++	__be16	window;
++	__sum16	check_tcp;
++	__be16	urg_ptr;
++	/*The TCP header options start here. */
++        u32 tcp_op1;
++        u16 tcp_op2;
++        /*TCP MF option header starts here. */
++        u8	mf_op_len;
++        u8 mf_op_req_thput;           /* Required throughput in MF */ 
++        u8 mf_op_cur_thput;           /* Current throughput in MF */
++        u8 mf_op_feedback_thput;      /* Feedback throughput in MF */
++        u8 mf_op_prop_delay_est;
++};
++
++struct per_port_states {
++    /*Number of bytes sent*/    
++    u64 B;
++    /*Number of on-goinhg flows*/
++    u32 N;
++    u64 Q;
++    /*Number of packets received during the control interval*/
++    u64 n;
++    /*Feedback rate of this router*/
++    u64 R;
++    u32 rtt_tot, rtt_a;
++};
++
++bool flow_seen (u32 ip, u16 port);
++void reset_flow_bitmap (void);
++void xcp_protocol (struct xdp_buff *skb, u32 size);
++int xcp_init(void);
++void reset_flow_bitmap (void);
++
++#endif /* __LINUX_NET_XDP_MONITOR_H__ */
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index 7446b98..c610efc 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -14,7 +14,7 @@ obj-y     := route.o inetpeer.o protocol.o \
+ 	     udp_offload.o arp.o icmp.o devinet.o af_inet.o igmp.o \
+ 	     fib_frontend.o fib_semantics.o fib_trie.o fib_notifier.o \
+ 	     inet_fragment.o ping.o ip_tunnel_core.o gre_offload.o \
+-	     metrics.o netlink.o
++	     metrics.o netlink.o xdp_monitor.o
+ 
+ obj-$(CONFIG_BPFILTER) += bpfilter/
+ 
+diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
+index 1fbe2f8..6d75fd2 100644
+--- a/net/ipv4/af_inet.c
++++ b/net/ipv4/af_inet.c
+@@ -120,6 +120,7 @@
+ #include <linux/mroute.h>
+ #endif
+ #include <net/l3mdev.h>
++#include <net/xdp_monitor.h>
+ 
+ #include <trace/events/sock.h>
+ 
+@@ -1965,6 +1966,8 @@ static int __init inet_init(void)
+ 	udplite4_register();
+ 
+ 	ping_init();
++        
++        xcp_init();
+ 
+ 	/*
+ 	 *	Set the ICMP layer up
+diff --git a/net/ipv4/ip_input.c b/net/ipv4/ip_input.c
+index 3196cf5..127273d 100644
+--- a/net/ipv4/ip_input.c
++++ b/net/ipv4/ip_input.c
+@@ -130,6 +130,7 @@
+ #include <linux/inetdevice.h>
+ #include <linux/netdevice.h>
+ #include <linux/etherdevice.h>
++#include <net/xdp_monitor.h>
+ 
+ #include <net/snmp.h>
+ #include <net/ip.h>
+@@ -148,6 +149,14 @@
+ #include <linux/netlink.h>
+ #include <net/dst_metadata.h>
+ 
++#ifdef __i386__
++#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
++#elif __x86_64__
++#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
++#else
++# error unknown platform
++#endif
++
+ /*
+  *	Process Router Attention IP option (RFC 2113)
+  */
+@@ -516,11 +525,76 @@ static struct sk_buff *ip_rcv_core(struct sk_buff *skb, struct net *net)
+ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt,
+ 	   struct net_device *orig_dev)
+ {
++        u64 tsc1 = 0, tsc2 = 0;
++        int i = 0;
++        
+ 	struct net *net = dev_net(dev);
+ 
+ 	skb = ip_rcv_core(skb, net);
+ 	if (skb == NULL)
+ 		return NET_RX_DROP;
++
++        struct xdp_buff *xdp = kmalloc(sizeof(*xdp), GFP_KERNEL);
++        xdp->data = skb->data;
++        xdp->data_end = skb->data + (skb->len - skb->data_len);
++        xdp->data_meta = skb;
++        
++        for (i = 0; i < 200; i++) {
++            register uint64_t start, end, cost_of_tsc;                      
++            unsigned long flag;                                
++            register unsigned cyc_high1, cyc_low1;             
++            register unsigned cyc_high2, cyc_low2;                     
++            preempt_disable();                                 
++            raw_local_irq_save(flag);                          
++            raw_local_irq_disable();                           
++            asm volatile("CPUID\n\t"                           \
++                         "RDTSC\n\t"                           \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                         :: RDTSC_DIRTY);                      
++//            b = flow_seen(flp->daddr);                                            
++            asm volatile("RDTSCP\n\t"                          \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         "CPUID\n\t"                           \
++                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                         :: RDTSC_DIRTY);                      
++            raw_local_irq_enable();                            
++            raw_local_irq_restore(flag);                       
++            preempt_enable();                                  
++            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++            cost_of_tsc = end - start;
++//            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", cost_of_tsc);
++
++            preempt_disable();                                 
++            raw_local_irq_save(flag);                          
++            raw_local_irq_disable();                           
++            asm volatile("CPUID\n\t"                           \
++                         "RDTSC\n\t"                           \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                         :: RDTSC_DIRTY);                      
++            xcp_protocol(xdp, skb->len - skb->data_len);                                            
++            asm volatile("RDTSCP\n\t"                          \
++                         "mov %%edx, %0\n\t"                   \
++                         "mov %%eax, %1\n\t"                   \
++                         "CPUID\n\t"                           \
++                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                         :: RDTSC_DIRTY);                      
++            raw_local_irq_enable();                            
++            raw_local_irq_restore(flag);                       
++            preempt_enable();                                  
++            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++            
++            pr_err("Cost of XCP = %llu !!!!!", (end - start - cost_of_tsc));   
++        }
++        
++        
++        
+ 	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
+ 		       net, NULL, skb, dev, NULL,
+ 		       ip_rcv_finish);
+diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
+new file mode 100644
+index 0000000..a947ee1
+--- /dev/null
++++ b/net/ipv4/xdp_monitor.c
+@@ -0,0 +1,198 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ *   This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ *
++ */
++
++#include <net/xdp_monitor.h>
++
++/*Using Cuckoo filter to check if we have seen this flow*/
++u8 cf[16384];
++#define FINGERPRINT(X) ((X) % 256)
++#define HASH(X) (((X) * 64) % 16381)
++#define MAX_KICK_CNT 10
++
++//15 cycles
++__always_inline bool flow_seen_cuckoo_filter (u32 ip, u16 port)
++{
++    u8 tmp;
++    int i;
++    u64 ip_port = ip;
++    ip_port = (ip_port << 16) | port;
++
++    u8 fingerprint = FINGERPRINT(ip_port);
++    u16 i1 = HASH(ip_port);
++    u16 i2 = i1 ^ HASH(fingerprint);
++    
++    if (likely(cf[i1] == fingerprint || cf[i2] == fingerprint)) {
++        return true;
++    }else {
++        if(!cf[i1]) {
++            cf[i1] = fingerprint;
++            return false;
++        } else if (!cf[i2]) {
++            cf[i2] = fingerprint;
++            return false;
++        }                      
++        
++        
++        for (i = 0; i < MAX_KICK_CNT; i++) {
++            tmp = cf[i1];
++            cf[i1] = fingerprint;
++            fingerprint = tmp;
++            i1 = i1 ^ HASH(fingerprint);
++            if (!cf[i1]) {
++                cf[i1] = fingerprint;
++                return false;                
++            }
++        }
++        
++        for (i = 0; i < MAX_KICK_CNT; i++) {
++            tmp = cf[i2];
++            cf[i2] = fingerprint;
++            fingerprint = tmp;
++            i2 = i2 ^ HASH(fingerprint);
++            if (!cf[i2]) {
++                cf[i2] = fingerprint;
++                return false;                
++            }
++        }
++        
++        pr_err("Could not kick :-)");        
++                
++        return false;
++    }
++}
++
++/*Using Bittmap to check if we have seen this flow*/
++struct bitmap {
++    u64 arr1[1024];
++    u64 arr2[1024];
++    u64 port[1024];
++};
++struct bitmap bm2;
++
++//Old: 15 cycles New: 20 cycle
++__always_inline bool flow_seen (u32 ip, u16 port)
++{
++    u16 part1 = ip & 65535;
++    u16 part2 = ip >> 16;
++   
++    u16 part1_idx = part1 >> 6; //divide by 64
++    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
++    u16 part2_idx = part2 >> 6; //divide by 64
++    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
++    
++    u16 port_idx = port >> 6; //divide by 64
++    u64 port_bitmap = 1ULL << (port & 63); //modulo by 64
++    
++    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap)  && (bm2.port[port_idx] & port_bitmap))) {
++        return true;
++    } else {
++        bm2.arr1[part1_idx] |= part1_bitmap;
++        bm2.arr2[part2_idx] |= part2_bitmap;
++        bm2.port[port_idx] |= port_bitmap;
++        return false;
++    }
++}
++
++//Old: 15 cycles New: 20 cycle
++__always_inline bool flow_seen_bitmap2_v2 (u32 ip, u16 port)
++{
++    u16 part1 = ip & 65535;
++    u16 part2 = ip >> 16;
++    
++    u16 part1_idx = part1 / 64; //divide by 64
++    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
++    u16 part2_idx = part2 / 64; //divide by 64
++    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
++    
++    u16 port_idx = port / 64; //divide by 64
++    u64 port_bitmap = 1ULL << (port % 64); //modulo by 64
++    
++    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap) && (bm2.port[port_idx] & port_bitmap))) {
++        return true;
++    } else {
++        bm2.arr1[part1_idx] |= part1_bitmap;
++        bm2.arr2[part2_idx] |= part2_bitmap;
++        bm2.port[port_idx] |= port_bitmap;
++        return false;
++    }
++}
++
++void reset_flow_bitmap (void)
++{
++    memset(&bm2, 0, sizeof(bm2));
++}
++
++struct per_port_states states;
++
++__always_inline void xcp_protocol (struct xdp_buff *xdp, u32 size)
++{
++    struct iphdr *iph;
++    const struct tcphdr *th;
++    unsigned char *ptr;
++    u64 Q;
++    u8 *feedback;
++    iph = (struct iphdr *)(xdp->data + ETH_HLEN);
++    if (unlikely(iph->version != 4))
++        return;
++    //Multiply by 4
++    th = (struct tcphdr *)(iph + (iph->ihl << 2));
++    states.n++;
++    states.B += (xdp->data_end - xdp->data);
++    Q = 100;
++    if(states.Q > Q)
++        states.Q = Q;
++//    pr_err("source ip=%pI4 port=%d", &(iph->saddr), th->source);
++
++/*    if(unlikely(!flow_seen(iph->saddr, th->source))){
++        states.N++;
++    }*/
++    
++    //Jump to the beginning of the TCP option and then beginning of the MF option and then feedback field in MF option
++    feedback = (unsigned char *)(th + sizeof(*th) + 6 + 2);
++    states.rtt_tot += *(feedback + 1);
++//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
++    if(*feedback > states.R)
++        *feedback = states.R;
++}
++
++static struct timer_list timer;
++
++void calc_xcp_rate( struct timer_list *t )
++{
++    u64 S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
++    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
++    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
++    mod_timer(&timer, jiffies + msecs_to_jiffies(states.rtt_a));
++    pr_err("In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
++
++    states.N = 0;
++    states.n = 0;
++    states.B = 0;
++    states.rtt_tot = 0;
++    states.Q = 300000;
++    reset_flow_bitmap();
++}
++
++int xcp_init(void)
++{
++  /* setup your timer to call the callback */
++//  timer_setup(&timer, calc_xcp_rate, 0);
++  /* setup timer interval to 200 msecs */
++//  mod_timer(&timer, jiffies + msecs_to_jiffies(200));
++  states.rtt_a = 200;
++  states.n = 200;
++  states.N = 200;
++  states.R = 200;
++  states.B = 400;
++  states.Q = 0;
++  return 0;
++}
++
++
+diff --git a/samples/Makefile b/samples/Makefile
+index bd601c0..4debee1 100644
+--- a/samples/Makefile
++++ b/samples/Makefile
+@@ -3,4 +3,4 @@
+ obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ trace_events/ livepatch/ \
+ 			   hw_breakpoint/ kfifo/ kdb/ hidraw/ rpmsg/ seccomp/ \
+ 			   configfs/ connector/ v4l/ trace_printk/ \
+-			   vfio-mdev/ statx/ qmi/
++			   vfio-mdev/ statx/ qmi/ bpf/
+diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
+index 36f9f41..61b7ce2 100644
+--- a/samples/bpf/Makefile
++++ b/samples/bpf/Makefile
+@@ -106,7 +106,7 @@ syscall_tp-objs := bpf_load.o syscall_tp_user.o
+ cpustat-objs := bpf_load.o cpustat_user.o
+ xdp_adjust_tail-objs := xdp_adjust_tail_user.o
+ xdpsock-objs := xdpsock_user.o
+-xdp_fwd-objs := xdp_fwd_user.o
++xdp_fwd-objs := xdp_xcp_user.o
+ task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
+ xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
+ 
+@@ -164,6 +164,7 @@ always += cpustat_kern.o
+ always += xdp_adjust_tail_kern.o
+ always += xdpsock_kern.o
+ always += xdp_fwd_kern.o
++always += xdp_xcp_kern.o
+ always += task_fd_query_kern.o
+ always += xdp_sample_pkts_kern.o
+ 
+diff --git a/samples/bpf/xdp_sample_pkts b/samples/bpf/xdp_sample_pkts
+new file mode 100644
+index 0000000..2e7c828
+Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
+diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
+new file mode 100644
+index 0000000..7b3a4d4
+--- /dev/null
++++ b/samples/bpf/xdp_xcp_kern.c
+@@ -0,0 +1,164 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ */
++#define KBUILD_MODNAME "foo"
++#include <uapi/linux/bpf.h>
++#include <linux/in.h>
++#include <linux/if_ether.h>
++#include <linux/if_packet.h>
++#include <linux/if_vlan.h>
++#include <linux/ip.h>
++#include <linux/ipv6.h>
++#include <net/xdp_monitor.h>
++
++#include "bpf_helpers.h"
++
++#define IPV6_FLOWINFO_MASK              cpu_to_be32(0x0FFFFFFF)
++
++struct bpf_map_def SEC("maps") tx_port = {
++	.type = BPF_MAP_TYPE_DEVMAP,
++	.key_size = sizeof(int),
++	.value_size = sizeof(int),
++	.max_entries = 64,
++};
++
++//
++///* from include/net/ip.h */
++//static __always_inline int ip_decrease_ttl(struct iphdr *iph)
++//{
++//	u32 check = (__force u32)iph->check;
++//
++//	check += (__force u32)htons(0x0100);
++//	iph->check = (__force __sum16)(check + (check >= 0xFFFF));
++//	return --iph->ttl;
++//}
++
++//static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
++//{
++//	void *data_end = (void *)(long)ctx->data_end;
++//	void *data = (void *)(long)ctx->data;
++//	struct bpf_fib_lookup fib_params;
++//	struct ethhdr *eth = data;
++//	struct ipv6hdr *ip6h;
++//	struct iphdr *iph;
++//	u16 h_proto;
++//	u64 nh_off;
++//	int rc;
++//
++//	nh_off = sizeof(*eth);
++//	if (data + nh_off > data_end)
++//		return XDP_DROP;
++//
++//	__builtin_memset(&fib_params, 0, sizeof(fib_params));
++//
++//	h_proto = eth->h_proto;
++//	if (h_proto == htons(ETH_P_IP)) {
++//		iph = data + nh_off;
++//
++//		if (iph + 1 > data_end)
++//			return XDP_DROP;
++//
++//		if (iph->ttl <= 1)
++//			return XDP_PASS;
++//
++//		fib_params.family	= AF_INET;
++//		fib_params.tos		= iph->tos;
++//		fib_params.l4_protocol	= iph->protocol;
++//		fib_params.sport	= 0;
++//		fib_params.dport	= 0;
++//		fib_params.tot_len	= ntohs(iph->tot_len);
++//		fib_params.ipv4_src	= iph->saddr;
++//		fib_params.ipv4_dst	= iph->daddr;
++//	} else if (h_proto == htons(ETH_P_IPV6)) {
++//		struct in6_addr *src = (struct in6_addr *) fib_params.ipv6_src;
++//		struct in6_addr *dst = (struct in6_addr *) fib_params.ipv6_dst;
++//
++//		ip6h = data + nh_off;
++//		if (ip6h + 1 > data_end)
++//			return XDP_DROP;
++//
++//		if (ip6h->hop_limit <= 1)
++//			return XDP_PASS;
++//
++//		fib_params.family	= AF_INET6;
++//		fib_params.flowinfo	= *(__be32 *)ip6h & IPV6_FLOWINFO_MASK;
++//		fib_params.l4_protocol	= ip6h->nexthdr;
++//		fib_params.sport	= 0;
++//		fib_params.dport	= 0;
++//		fib_params.tot_len	= ntohs(ip6h->payload_len);
++//		*src			= ip6h->saddr;
++//		*dst			= ip6h->daddr;
++//	} else {
++//		return XDP_PASS;
++//	}
++//
++//	fib_params.ifindex = ctx->ingress_ifindex;
++//
++//	rc = bpf_fib_lookup(ctx, &fib_params, sizeof(fib_params), flags);
++//
++//	/* verify egress index has xdp support
++//	 * TO-DO bpf_map_lookup_elem(&tx_port, &key) fails with
++//	 *       cannot pass map_type 14 into func bpf_map_lookup_elem#1:
++//	 * NOTE: without verification that egress index supports XDP
++//	 *       forwarding packets are dropped.
++//	 */
++//	if (rc == 0) {
++//		if (h_proto == htons(ETH_P_IP))
++//			ip_decrease_ttl(iph);
++//		else if (h_proto == htons(ETH_P_IPV6))
++//			ip6h->hop_limit--;
++//
++//		memcpy(eth->h_dest, fib_params.dmac, ETH_ALEN);
++//		memcpy(eth->h_source, fib_params.smac, ETH_ALEN);
++//		return bpf_redirect_map(&tx_port, fib_params.ifindex, 0);
++//	}
++//
++//	return XDP_PASS;
++//}
++
++struct per_port_states states;
++
++SEC("xdp_fwd")
++int xdp_fwd_prog(struct xdp_md *ctx)
++{
++    void *data_end = (void *)(long)ctx->data_end;
++    void *data = (void *)(long)ctx->data;
++    int len = data_end - data;
++    struct pkthdr *ph = data;
++    u64 Q;
++
++    if (len < 55)
++            return XDP_DROP;
++    
++    if (unlikely(ph->version != 4))
++        return XDP_DROP;
++
++    states.n++;
++    states.B += len;
++    Q = 100;
++    if(states.Q > Q)
++        states.Q = Q;
++//    pr_err("source ip=%pI4 port=%d", &(iph->saddr), th->source);
++
++    if(unlikely(!flow_seen(ph->saddr, ph->source))){
++        states.N++;
++    }
++    
++    states.rtt_tot += ph->mf_op_prop_delay_est;
++//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
++    if(ph->mf_op_feedback_thput > states.R)
++        ph->mf_op_feedback_thput = states.R;
++        
++        return XDP_PASS;
++}
++
++char _license[] SEC("license") = "GPL";
+diff --git a/samples/bpf/xdp_xcp_user.c b/samples/bpf/xdp_xcp_user.c
+new file mode 100644
+index 0000000..f88e1d7
+--- /dev/null
++++ b/samples/bpf/xdp_xcp_user.c
+@@ -0,0 +1,148 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ */
++
++#include <linux/bpf.h>
++#include <linux/if_link.h>
++#include <linux/limits.h>
++#include <net/if.h>
++#include <errno.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <stdbool.h>
++#include <string.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <libgen.h>
++
++#include "bpf/libbpf.h"
++#include <bpf/bpf.h>
++
++
++static int do_attach(int idx, int fd, const char *name)
++{
++	int err;
++
++	err = bpf_set_link_xdp_fd(idx, fd, 0);
++	if (err < 0)
++		printf("ERROR: failed to attach program to %s\n", name);
++
++	return err;
++}
++
++static int do_detach(int idx, const char *name)
++{
++	int err;
++
++	err = bpf_set_link_xdp_fd(idx, -1, 0);
++	if (err < 0)
++		printf("ERROR: failed to detach program from %s\n", name);
++
++	return err;
++}
++
++static void usage(const char *prog)
++{
++	fprintf(stderr,
++		"usage: %s [OPTS] interface-list\n"
++		"\nOPTS:\n"
++		"    -d    detach program\n"
++		"    -D    direct table lookups (skip fib rules)\n",
++		prog);
++}
++
++int main(int argc, char **argv)
++{
++	struct bpf_prog_load_attr prog_load_attr = {
++		.prog_type	= BPF_PROG_TYPE_XDP,
++	};
++	const char *prog_name = "xdp_fwd";
++	struct bpf_program *prog;
++	char filename[PATH_MAX];
++	struct bpf_object *obj;
++	int opt, i, idx, err;
++	int prog_fd, map_fd;
++	int attach = 1;
++	int ret = 0;
++
++	while ((opt = getopt(argc, argv, ":dD")) != -1) {
++		switch (opt) {
++		case 'd':
++			attach = 0;
++			break;
++		case 'D':
++			prog_name = "xdp_fwd_direct";
++			break;
++		default:
++			usage(basename(argv[0]));
++			return 1;
++		}
++	}
++
++	if (optind == argc) {
++		usage(basename(argv[0]));
++		return 1;
++	}
++
++	if (attach) {
++		snprintf(filename, sizeof(filename), "%s_kern.o", argv[0]);
++		prog_load_attr.file = filename;
++
++		if (access(filename, O_RDONLY) < 0) {
++			printf("error accessing file %s: %s\n",
++				filename, strerror(errno));
++			return 1;
++		}
++
++		if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
++			return 1;
++
++		prog = bpf_object__find_program_by_title(obj, prog_name);
++		prog_fd = bpf_program__fd(prog);
++		if (prog_fd < 0) {
++			printf("program not found: %s\n", strerror(prog_fd));
++			return 1;
++		}
++		map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj,
++								  "tx_port"));
++		if (map_fd < 0) {
++			printf("map not found: %s\n", strerror(map_fd));
++			return 1;
++		}
++	}
++	if (attach) {
++		for (i = 1; i < 64; ++i)
++			bpf_map_update_elem(map_fd, &i, &i, 0);
++	}
++
++	for (i = optind; i < argc; ++i) {
++		idx = if_nametoindex(argv[i]);
++		if (!idx)
++			idx = strtoul(argv[i], NULL, 0);
++
++		if (!idx) {
++			fprintf(stderr, "Invalid arg\n");
++			return 1;
++		}
++		if (!attach) {
++			err = do_detach(idx, argv[i]);
++			if (err)
++				ret = err;
++		} else {
++			err = do_attach(idx, prog_fd, argv[i]);
++			if (err)
++				ret = err;
++		}
++	}
++
++	return ret;
++}
