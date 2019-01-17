@@ -1189,19 +1189,26 @@ index bd601c0..4debee1 100644
 -			   vfio-mdev/ statx/ qmi/
 +			   vfio-mdev/ statx/ qmi/ bpf/
 diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
-index 36f9f41..61b7ce2 100644
+index 36f9f41..755e871 100644
 --- a/samples/bpf/Makefile
 +++ b/samples/bpf/Makefile
-@@ -106,7 +106,7 @@ syscall_tp-objs := bpf_load.o syscall_tp_user.o
- cpustat-objs := bpf_load.o cpustat_user.o
+@@ -51,6 +51,7 @@ hostprogs-y += cpustat
+ hostprogs-y += xdp_adjust_tail
+ hostprogs-y += xdpsock
+ hostprogs-y += xdp_fwd
++hostprogs-y += xdp_xcp
+ hostprogs-y += task_fd_query
+ hostprogs-y += xdp_sample_pkts
+ 
+@@ -107,6 +108,7 @@ cpustat-objs := bpf_load.o cpustat_user.o
  xdp_adjust_tail-objs := xdp_adjust_tail_user.o
  xdpsock-objs := xdpsock_user.o
--xdp_fwd-objs := xdp_fwd_user.o
-+xdp_fwd-objs := xdp_xcp_user.o
+ xdp_fwd-objs := xdp_fwd_user.o
++xdp_xcp-objs := xdp_xcp_user.o
  task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
  xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
  
-@@ -164,6 +164,7 @@ always += cpustat_kern.o
+@@ -164,6 +166,7 @@ always += cpustat_kern.o
  always += xdp_adjust_tail_kern.o
  always += xdpsock_kern.o
  always += xdp_fwd_kern.o
@@ -1215,10 +1222,10 @@ index 0000000..2e7c828
 Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
 diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
 new file mode 100644
-index 0000000..7b3a4d4
+index 0000000..ae1b7b2
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_kern.c
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,70 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -1251,100 +1258,6 @@ index 0000000..7b3a4d4
 +	.value_size = sizeof(int),
 +	.max_entries = 64,
 +};
-+
-+//
-+///* from include/net/ip.h */
-+//static __always_inline int ip_decrease_ttl(struct iphdr *iph)
-+//{
-+//	u32 check = (__force u32)iph->check;
-+//
-+//	check += (__force u32)htons(0x0100);
-+//	iph->check = (__force __sum16)(check + (check >= 0xFFFF));
-+//	return --iph->ttl;
-+//}
-+
-+//static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
-+//{
-+//	void *data_end = (void *)(long)ctx->data_end;
-+//	void *data = (void *)(long)ctx->data;
-+//	struct bpf_fib_lookup fib_params;
-+//	struct ethhdr *eth = data;
-+//	struct ipv6hdr *ip6h;
-+//	struct iphdr *iph;
-+//	u16 h_proto;
-+//	u64 nh_off;
-+//	int rc;
-+//
-+//	nh_off = sizeof(*eth);
-+//	if (data + nh_off > data_end)
-+//		return XDP_DROP;
-+//
-+//	__builtin_memset(&fib_params, 0, sizeof(fib_params));
-+//
-+//	h_proto = eth->h_proto;
-+//	if (h_proto == htons(ETH_P_IP)) {
-+//		iph = data + nh_off;
-+//
-+//		if (iph + 1 > data_end)
-+//			return XDP_DROP;
-+//
-+//		if (iph->ttl <= 1)
-+//			return XDP_PASS;
-+//
-+//		fib_params.family	= AF_INET;
-+//		fib_params.tos		= iph->tos;
-+//		fib_params.l4_protocol	= iph->protocol;
-+//		fib_params.sport	= 0;
-+//		fib_params.dport	= 0;
-+//		fib_params.tot_len	= ntohs(iph->tot_len);
-+//		fib_params.ipv4_src	= iph->saddr;
-+//		fib_params.ipv4_dst	= iph->daddr;
-+//	} else if (h_proto == htons(ETH_P_IPV6)) {
-+//		struct in6_addr *src = (struct in6_addr *) fib_params.ipv6_src;
-+//		struct in6_addr *dst = (struct in6_addr *) fib_params.ipv6_dst;
-+//
-+//		ip6h = data + nh_off;
-+//		if (ip6h + 1 > data_end)
-+//			return XDP_DROP;
-+//
-+//		if (ip6h->hop_limit <= 1)
-+//			return XDP_PASS;
-+//
-+//		fib_params.family	= AF_INET6;
-+//		fib_params.flowinfo	= *(__be32 *)ip6h & IPV6_FLOWINFO_MASK;
-+//		fib_params.l4_protocol	= ip6h->nexthdr;
-+//		fib_params.sport	= 0;
-+//		fib_params.dport	= 0;
-+//		fib_params.tot_len	= ntohs(ip6h->payload_len);
-+//		*src			= ip6h->saddr;
-+//		*dst			= ip6h->daddr;
-+//	} else {
-+//		return XDP_PASS;
-+//	}
-+//
-+//	fib_params.ifindex = ctx->ingress_ifindex;
-+//
-+//	rc = bpf_fib_lookup(ctx, &fib_params, sizeof(fib_params), flags);
-+//
-+//	/* verify egress index has xdp support
-+//	 * TO-DO bpf_map_lookup_elem(&tx_port, &key) fails with
-+//	 *       cannot pass map_type 14 into func bpf_map_lookup_elem#1:
-+//	 * NOTE: without verification that egress index supports XDP
-+//	 *       forwarding packets are dropped.
-+//	 */
-+//	if (rc == 0) {
-+//		if (h_proto == htons(ETH_P_IP))
-+//			ip_decrease_ttl(iph);
-+//		else if (h_proto == htons(ETH_P_IPV6))
-+//			ip6h->hop_limit--;
-+//
-+//		memcpy(eth->h_dest, fib_params.dmac, ETH_ALEN);
-+//		memcpy(eth->h_source, fib_params.smac, ETH_ALEN);
-+//		return bpf_redirect_map(&tx_port, fib_params.ifindex, 0);
-+//	}
-+//
-+//	return XDP_PASS;
-+//}
 +
 +struct per_port_states states;
 +
@@ -1385,10 +1298,10 @@ index 0000000..7b3a4d4
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xdp_xcp_user.c b/samples/bpf/xdp_xcp_user.c
 new file mode 100644
-index 0000000..f88e1d7
+index 0000000..e06ca0e
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_user.c
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,145 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -1456,7 +1369,7 @@ index 0000000..f88e1d7
 +	struct bpf_prog_load_attr prog_load_attr = {
 +		.prog_type	= BPF_PROG_TYPE_XDP,
 +	};
-+	const char *prog_name = "xdp_fwd";
++	const char *prog_name = "xdp_xcp";
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +	struct bpf_object *obj;
@@ -1469,9 +1382,6 @@ index 0000000..f88e1d7
 +		switch (opt) {
 +		case 'd':
 +			attach = 0;
-+			break;
-+		case 'D':
-+			prog_name = "xdp_fwd_direct";
 +			break;
 +		default:
 +			usage(basename(argv[0]));
