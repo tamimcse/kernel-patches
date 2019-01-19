@@ -1224,7 +1224,7 @@ index 0000000..2e7c828
 Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
 diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
 new file mode 100644
-index 0000000..9606539
+index 0000000..3d78e67
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_kern.c
 @@ -0,0 +1,76 @@
@@ -1261,7 +1261,7 @@ index 0000000..9606539
 +	.max_entries = 64,
 +};
 +
-+struct bpf_map_def SEC("maps") pp_states = {
++struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
 +	.key_size	= sizeof(u32),
 +	.value_size	= sizeof(struct per_port_states),
@@ -1280,13 +1280,13 @@ index 0000000..9606539
 +    u32 key = 0;
 +    u64 Q;
 +
-+    if (len < 55)
++    if (data + 67 > data_end)
 +            return XDP_DROP;
 +    
 +    if (unlikely(ph->version != 4))
 +        return XDP_DROP;
 +
-+    states = bpf_map_lookup_elem(&pp_states, &key);
++    states = bpf_map_lookup_elem(&states_map, &key);
 +    if (!states)
 +            return XDP_ABORTED;
 +    
@@ -1300,7 +1300,7 @@ index 0000000..9606539
 +    if(ph->mf_op_feedback_thput > states->R)
 +        ph->mf_op_feedback_thput = states->R;
 +        
-+        return XDP_PASS;
++    return XDP_PASS;
 +}
 +
 +char _license[] SEC("license") = "GPL";
