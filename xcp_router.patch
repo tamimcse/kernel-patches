@@ -1220,14 +1220,14 @@ index 36f9f41..755e871 100644
  
 diff --git a/samples/bpf/xdp_sample_pkts b/samples/bpf/xdp_sample_pkts
 new file mode 100644
-index 0000000..5afb3fc
+index 0000000..2e7c828
 Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
 diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
 new file mode 100644
-index 0000000..65010ec
+index 0000000..9606539
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_kern.c
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,76 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -1261,7 +1261,13 @@ index 0000000..65010ec
 +	.max_entries = 64,
 +};
 +
-+struct per_port_states states;
++struct bpf_map_def SEC("maps") pp_states = {
++	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
++	.key_size	= sizeof(u32),
++	.value_size	= sizeof(struct per_port_states),
++	.max_entries	= 1,
++};
++//struct per_port_states states;
 +
 +SEC("xcp_router")
 +int xdp_fwd_prog(struct xdp_md *ctx)
@@ -1270,6 +1276,8 @@ index 0000000..65010ec
 +    void *data = (void *)(long)ctx->data;
 +    int len = data_end - data;
 +    struct pkthdr *ph = data;
++    struct per_port_states *states;
++    u32 key = 0;
 +    u64 Q;
 +
 +    if (len < 55)
@@ -1278,19 +1286,19 @@ index 0000000..65010ec
 +    if (unlikely(ph->version != 4))
 +        return XDP_DROP;
 +
-+    states.n++;
-+//    states.B += len;
-+//    Q = 100;
-+//    if(states.Q > Q)
-+//        states.Q = Q;
-+//
-+//    if(unlikely(!flow_seen(ph->saddr, ph->source))){
-+//        states.N++;
-+//    }
-+//    
-+//    states.rtt_tot += ph->mf_op_prop_delay_est;
-+//    if(ph->mf_op_feedback_thput > states.R)
-+//        ph->mf_op_feedback_thput = states.R;
++    states = bpf_map_lookup_elem(&pp_states, &key);
++    if (!states)
++            return XDP_ABORTED;
++    
++    states->n++;
++    states->B += len;
++    Q = 100;
++    if(states->Q > Q)
++        states->Q = Q;
++    
++    states->rtt_tot += ph->mf_op_prop_delay_est;
++    if(ph->mf_op_feedback_thput > states->R)
++        ph->mf_op_feedback_thput = states->R;
 +        
 +        return XDP_PASS;
 +}
