@@ -1224,7 +1224,7 @@ index 0000000..2e7c828
 Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
 diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
 new file mode 100644
-index 0000000..3d78e67
+index 0000000..f3ab396
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_kern.c
 @@ -0,0 +1,76 @@
@@ -1269,7 +1269,7 @@ index 0000000..3d78e67
 +};
 +//struct per_port_states states;
 +
-+SEC("xcp_router")
++SEC("xdp_xcp")
 +int xdp_fwd_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
@@ -1306,10 +1306,10 @@ index 0000000..3d78e67
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xdp_xcp_user.c b/samples/bpf/xdp_xcp_user.c
 new file mode 100644
-index 0000000..6d32335
+index 0000000..381cadb
 --- /dev/null
 +++ b/samples/bpf/xdp_xcp_user.c
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,144 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -1413,6 +1413,7 @@ index 0000000..6d32335
 +		}
 +		if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
 +			return 1;
++
 +		prog = bpf_object__find_program_by_title(obj, prog_name);
 +		prog_fd = bpf_program__fd(prog);
 +		if (prog_fd < 0) {
