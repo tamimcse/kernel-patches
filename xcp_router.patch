@@ -1191,14 +1191,14 @@ index bd601c0..4debee1 100644
 -			   vfio-mdev/ statx/ qmi/
 +			   vfio-mdev/ statx/ qmi/ bpf/
 diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
-index 36f9f41..755e871 100644
+index 36f9f41..8bc7f5f 100644
 --- a/samples/bpf/Makefile
 +++ b/samples/bpf/Makefile
 @@ -51,6 +51,7 @@ hostprogs-y += cpustat
  hostprogs-y += xdp_adjust_tail
  hostprogs-y += xdpsock
  hostprogs-y += xdp_fwd
-+hostprogs-y += xdp_xcp
++hostprogs-y += xcp_router
  hostprogs-y += task_fd_query
  hostprogs-y += xdp_sample_pkts
  
@@ -1206,7 +1206,7 @@ index 36f9f41..755e871 100644
  xdp_adjust_tail-objs := xdp_adjust_tail_user.o
  xdpsock-objs := xdpsock_user.o
  xdp_fwd-objs := xdp_fwd_user.o
-+xdp_xcp-objs := xdp_xcp_user.o
++xcp_router-objs := xcp_router_user.o
  task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
  xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
  
@@ -1214,20 +1214,16 @@ index 36f9f41..755e871 100644
  always += xdp_adjust_tail_kern.o
  always += xdpsock_kern.o
  always += xdp_fwd_kern.o
-+always += xdp_xcp_kern.o
++always += xcp_router_kern.o
  always += task_fd_query_kern.o
  always += xdp_sample_pkts_kern.o
  
-diff --git a/samples/bpf/xdp_sample_pkts b/samples/bpf/xdp_sample_pkts
+diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
 new file mode 100644
-index 0000000..2e7c828
-Binary files /dev/null and b/samples/bpf/xdp_sample_pkts differ
-diff --git a/samples/bpf/xdp_xcp_kern.c b/samples/bpf/xdp_xcp_kern.c
-new file mode 100644
-index 0000000..f3ab396
+index 0000000..3850e2e
 --- /dev/null
-+++ b/samples/bpf/xdp_xcp_kern.c
-@@ -0,0 +1,76 @@
++++ b/samples/bpf/xcp_router_kern.c
+@@ -0,0 +1,77 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -1267,9 +1263,10 @@ index 0000000..f3ab396
 +	.value_size	= sizeof(struct per_port_states),
 +	.max_entries	= 1,
 +};
-+//struct per_port_states states;
 +
-+SEC("xdp_xcp")
++
++/*This name needs to match to that of the file name*/
++SEC("xcp_router")
 +int xdp_fwd_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
@@ -1304,11 +1301,11 @@ index 0000000..f3ab396
 +}
 +
 +char _license[] SEC("license") = "GPL";
-diff --git a/samples/bpf/xdp_xcp_user.c b/samples/bpf/xdp_xcp_user.c
+diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..381cadb
+index 0000000..3b3423c
 --- /dev/null
-+++ b/samples/bpf/xdp_xcp_user.c
++++ b/samples/bpf/xcp_router_user.c
 @@ -0,0 +1,144 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
@@ -1377,7 +1374,7 @@ index 0000000..381cadb
 +	struct bpf_prog_load_attr prog_load_attr = {
 +		.prog_type	= BPF_PROG_TYPE_XDP,
 +	};
-+	const char *prog_name = "xdp_xcp";
++	const char *prog_name = "xcp_router";
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +	struct bpf_object *obj;
