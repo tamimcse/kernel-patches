@@ -499,10 +499,10 @@ index 36f9f41..8bc7f5f 100644
  
 diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
 new file mode 100644
-index 0000000..3850e2e
+index 0000000..c8fed46
 --- /dev/null
 +++ b/samples/bpf/xcp_router_kern.c
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,134 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -536,6 +536,13 @@ index 0000000..3850e2e
 +	.max_entries = 64,
 +};
 +
++struct bpf_map_def SEC("maps") timers_map = {
++	.type = BPF_MAP_TYPE_ARRAY,
++	.key_size = sizeof(int),
++	.value_size = sizeof(struct timer_list),
++	.max_entries = 4,
++};
++
 +struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
 +	.key_size	= sizeof(u32),
@@ -544,9 +551,59 @@ index 0000000..3850e2e
 +};
 +
 +
++static void calc_xcp_rate( struct timer_list *t )
++{
++//    u64 S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
++//    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
++//    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
++//    mod_timer(&timer, jiffies + msecs_to_jiffies(states.rtt_a));
++//    pr_err("In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
++//
++//    states.N = 0;
++//    states.n = 0;
++//    states.B = 0;
++//    states.rtt_tot = 0;
++//    states.Q = 300000;
++//    reset_flow_bitmap();
++}
++
++SEC("xcp_router_init")
++int xcp_router_init_prog(struct xdp_md *ctx)
++{
++    void *data_end = (void *)(long)ctx->data_end;
++    void *data = (void *)(long)ctx->data;
++    int len = data_end - data;
++    struct pkthdr *ph = data;
++    struct per_port_states *states;
++    u32 key = 0;
++    u64 Q;
++    static struct timer_list *timer;    
++    
++    states = bpf_map_lookup_elem(&states_map, &key);
++    if (!states)
++            return XDP_ABORTED;
++    states->rtt_a = 200;
++    states->n = 200;
++    states->N = 200;
++    states->R = 200;
++    states->B = 400;
++    states->Q = 0;
++
++    timer = bpf_map_lookup_elem(&timers_map, &key);
++    if (!timer)
++            return XDP_ABORTED;
++    
++    /* setup your timer to call the callback */
++    timer_setup(timer, calc_xcp_rate, 0);
++    /* setup timer interval to 200 msecs */
++    mod_timer(timer, jiffies + msecs_to_jiffies(200));
++
++    return XDP_PASS;
++}
++
 +/*This name needs to match to that of the file name*/
 +SEC("xcp_router")
-+int xdp_fwd_prog(struct xdp_md *ctx)
++int xcp_router_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
 +    void *data = (void *)(long)ctx->data;
