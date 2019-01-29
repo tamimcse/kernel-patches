@@ -499,10 +499,10 @@ index 36f9f41..8bc7f5f 100644
  
 diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
 new file mode 100644
-index 0000000..c8fed46
+index 0000000..f50f9ec
 --- /dev/null
 +++ b/samples/bpf/xcp_router_kern.c
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,84 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -529,19 +529,19 @@ index 0000000..c8fed46
 +
 +#define IPV6_FLOWINFO_MASK              cpu_to_be32(0x0FFFFFFF)
 +
-+struct bpf_map_def SEC("maps") tx_port = {
-+	.type = BPF_MAP_TYPE_DEVMAP,
-+	.key_size = sizeof(int),
-+	.value_size = sizeof(int),
-+	.max_entries = 64,
-+};
-+
-+struct bpf_map_def SEC("maps") timers_map = {
-+	.type = BPF_MAP_TYPE_ARRAY,
-+	.key_size = sizeof(int),
-+	.value_size = sizeof(struct timer_list),
-+	.max_entries = 4,
-+};
++//struct bpf_map_def SEC("maps") tx_port = {
++//	.type = BPF_MAP_TYPE_DEVMAP,
++//	.key_size = sizeof(int),
++//	.value_size = sizeof(int),
++//	.max_entries = 64,
++//};
++//
++//struct bpf_map_def SEC("maps") timers_map = {
++//	.type = BPF_MAP_TYPE_ARRAY,
++//	.key_size = sizeof(int),
++//	.value_size = sizeof(struct timer_list),/**/
++//	.max_entries = 4,
++//};
 +
 +struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
@@ -549,57 +549,6 @@ index 0000000..c8fed46
 +	.value_size	= sizeof(struct per_port_states),
 +	.max_entries	= 1,
 +};
-+
-+
-+static void calc_xcp_rate( struct timer_list *t )
-+{
-+//    u64 S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
-+//    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
-+//    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
-+//    mod_timer(&timer, jiffies + msecs_to_jiffies(states.rtt_a));
-+//    pr_err("In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
-+//
-+//    states.N = 0;
-+//    states.n = 0;
-+//    states.B = 0;
-+//    states.rtt_tot = 0;
-+//    states.Q = 300000;
-+//    reset_flow_bitmap();
-+}
-+
-+SEC("xcp_router_init")
-+int xcp_router_init_prog(struct xdp_md *ctx)
-+{
-+    void *data_end = (void *)(long)ctx->data_end;
-+    void *data = (void *)(long)ctx->data;
-+    int len = data_end - data;
-+    struct pkthdr *ph = data;
-+    struct per_port_states *states;
-+    u32 key = 0;
-+    u64 Q;
-+    static struct timer_list *timer;    
-+    
-+    states = bpf_map_lookup_elem(&states_map, &key);
-+    if (!states)
-+            return XDP_ABORTED;
-+    states->rtt_a = 200;
-+    states->n = 200;
-+    states->N = 200;
-+    states->R = 200;
-+    states->B = 400;
-+    states->Q = 0;
-+
-+    timer = bpf_map_lookup_elem(&timers_map, &key);
-+    if (!timer)
-+            return XDP_ABORTED;
-+    
-+    /* setup your timer to call the callback */
-+    timer_setup(timer, calc_xcp_rate, 0);
-+    /* setup timer interval to 200 msecs */
-+    mod_timer(timer, jiffies + msecs_to_jiffies(200));
-+
-+    return XDP_PASS;
-+}
 +
 +/*This name needs to match to that of the file name*/
 +SEC("xcp_router")
@@ -610,8 +559,9 @@ index 0000000..c8fed46
 +    int len = data_end - data;
 +    struct pkthdr *ph = data;
 +    struct per_port_states *states;
-+    u32 key = 0;
++    u32 key1 = 0, key2 = 0;
 +    u64 Q;
++    struct timer_list *timer;
 +
 +    if (data + 67 > data_end)
 +            return XDP_DROP;
@@ -619,7 +569,7 @@ index 0000000..c8fed46
 +    if (unlikely(ph->version != 4))
 +        return XDP_DROP;
 +
-+    states = bpf_map_lookup_elem(&states_map, &key);
++    states = bpf_map_lookup_elem(&states_map, &key1);
 +    if (!states)
 +            return XDP_ABORTED;
 +    
@@ -639,10 +589,10 @@ index 0000000..c8fed46
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..3b3423c
+index 0000000..fbc4dd0
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,192 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -671,6 +621,22 @@ index 0000000..3b3423c
 +
 +#include "bpf/libbpf.h"
 +#include <bpf/bpf.h>
++
++#include <unistd.h>
++#include <signal.h>
++
++struct per_port_states {
++    /*Number of bytes sent*/    
++    unsigned long long B;
++    /*Number of on-goinhg flows*/
++    unsigned int N;
++    unsigned long long Q;
++    /*Number of packets received during the control interval*/
++    unsigned long long n;
++    /*Feedback rate of this router*/
++    unsigned long long R;
++    unsigned int rtt_tot, rtt_a;
++};
 +
 +
 +static int do_attach(int idx, int fd, const char *name)
@@ -704,6 +670,42 @@ index 0000000..3b3423c
 +		"    -D    direct table lookups (skip fib rules)\n",
 +		prog);
 +}
++struct bpf_object *obj;
++
++void on_alarm(int signum)
++{
++    int opt, i, idx, err;
++    int prog_fd, map_fd;
++    int attach = 1;
++    int ret = 0;
++    struct bpf_map *map;
++    struct per_port_states states;
++    unsigned int key = 0;
++    
++    printf("In on_alerm\n");
++    
++    map = bpf_object__find_map_by_name(obj, "states_map");
++    map_fd = bpf_map__fd(map);
++    if (map_fd < 0) {
++            printf("states_map not found: %s\n", strerror(map_fd));
++            return 1;
++    }
++    
++    if(bpf_map_lookup_elem(map_fd, &key, &states) < 0)
++            return XDP_ABORTED;
++    
++    unsigned long long S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
++    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
++    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
++    printf("FUCK!!!! In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
++    
++    states.N = 0;
++    states.n = 0;
++    states.B = 0;
++    states.rtt_tot = 0;
++    states.Q = 300000;
++    alarm(states.rtt_a);  // Reschedule alarm
++}
 +
 +int main(int argc, char **argv)
 +{
@@ -713,11 +715,20 @@ index 0000000..3b3423c
 +	const char *prog_name = "xcp_router";
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
-+	struct bpf_object *obj;
++
 +	int opt, i, idx, err;
 +	int prog_fd, map_fd;
 +	int attach = 1;
 +	int ret = 0;
++        struct bpf_map *map;
++        struct per_port_states states;
++        unsigned int key = 0;
++        
++        struct sigaction act;
++        act.sa_handler = &on_alarm;
++//        act.sa_mask = 0;
++//        act.sa_flags = SA_RESTART;  // Restart interrupted system calls
++        sigaction(SIGALRM, &act, NULL);
 +
 +	while ((opt = getopt(argc, argv, ":dD")) != -1) {
 +		switch (opt) {
@@ -753,37 +764,24 @@ index 0000000..3b3423c
 +			printf("program not found: %s\n", strerror(prog_fd));
 +			return 1;
 +		}
-+		map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj,
-+								  "tx_port"));
++                
++                map = bpf_object__find_map_by_name(obj, "states_map");
++		map_fd = bpf_map__fd(map);
 +		if (map_fd < 0) {
-+			printf("map not found: %s\n", strerror(map_fd));
++			printf("states_map map not found: %s\n", strerror(map_fd));
 +			return 1;
 +		}
++                
++                if(bpf_map_lookup_elem(map_fd, &key, &states) < 0)
++                        return XDP_ABORTED;
++                
++                alarm(1);               
 +	}
-+	if (attach) {
-+		for (i = 1; i < 64; ++i)
-+			bpf_map_update_elem(map_fd, &i, &i, 0);
-+	}
-+
-+	for (i = optind; i < argc; ++i) {
-+		idx = if_nametoindex(argv[i]);
-+		if (!idx)
-+			idx = strtoul(argv[i], NULL, 0);
-+
-+		if (!idx) {
-+			fprintf(stderr, "Invalid arg\n");
-+			return 1;
-+		}
-+		if (!attach) {
-+			err = do_detach(idx, argv[i]);
-+			if (err)
-+				ret = err;
-+		} else {
-+			err = do_attach(idx, prog_fd, argv[i]);
-+			if (err)
-+				ret = err;
-+		}
-+	}
++        
++        printf("Press ENTER key to Continue\n");  
++        getchar(); 
++        
++	printf("Here I am \n");
 +
 +	return ret;
 +}
