@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..2c13328
+index 0000000..90dc598
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,188 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -742,6 +742,18 @@ index 0000000..2c13328
 +                
 +                if(bpf_map_lookup_elem(map_fd, &key, &states) < 0)
 +                        return XDP_ABORTED;
++                
++                states.rtt_a = 200;
++                states.n = 200;
++                states.N = 200;
++                states.R = 200;
++                states.B = 300;
++                states.Q = 0;
++                
++                if (bpf_map_update_elem(map_fd, &key, &states, BPF_ANY) != 0) {
++                        fprintf(stderr, "states_map map update failed: %s\n", strerror(errno));
++                        return;
++                }
 +                
 +                alarm(1);               
 +	}
