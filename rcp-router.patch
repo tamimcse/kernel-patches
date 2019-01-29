@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..7dc1aa9
+index 0000000..1db37b4
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,220 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -641,11 +641,12 @@ index 0000000..7dc1aa9
 +
 +int states_init(struct per_port_states *states);
 +int states_reset(struct per_port_states *states);
++int calc_rcp_rate(struct per_port_states *states);
 +void on_alarm(int signum);
 +
 +int states_init(struct per_port_states *states)
 +{
-+  states->rtt_a = 200;
++  states->rtt_a = 1;
 +  states->n = 200;
 +  states->N = 200;
 +  states->R = 200;
@@ -656,7 +657,7 @@ index 0000000..7dc1aa9
 +
 +int states_reset(struct per_port_states *states)
 +{
-+  states->rtt_a = 200;
++  states->rtt_a = 1;
 +  states->rtt_tot = 0;
 +  states->n = 0;
 +  states->N = 200;
@@ -664,6 +665,14 @@ index 0000000..7dc1aa9
 +  states->B = 0;
 +  states->Q = 0;
 +  return 0;
++}
++
++int calc_rcp_rate(struct per_port_states *states)
++{
++    uint64_t S = states->rtt_a == 0 ? 2000 : 2000 - states->B/states->rtt_a;
++    states->rtt_a = states->n == 0 ? 200 : states->rtt_tot/states->n;
++    states->R = states->N == 0 ? 2000 : states->R + ((400 * states->rtt_a * S - 226 * states->Q)/(1000 * states->N));
++    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states->B, states->rtt_a, S, states->Q, states->N, states->R);	
 +}
 +
 +void on_alarm(int signum)
@@ -686,10 +695,12 @@ index 0000000..7dc1aa9
 +            return;
 +    
 +    states = allstates[0];
-+    unsigned long long S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
-+    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
-+    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
-+    printf("FUCK!!!! In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
++//    unsigned long long S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
++//    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
++//    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
++//    printf("FUCK!!!! In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
++    
++    calc_rcp_rate(&states);
 +    
 +    states_reset(&states);
 +    
@@ -698,8 +709,7 @@ index 0000000..7dc1aa9
 +            return;
 +    }
 +    
-+//    alarm(states.rtt_a);  // Reschedule alarm
-+      alarm(1);  // Reschedule alarm
++    alarm(states.rtt_a);  // Reschedule alarm
 +}
 +
 +int main(int argc, char **argv)
