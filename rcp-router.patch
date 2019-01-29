@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..90dc598
+index 0000000..7dc1aa9
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,210 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -639,7 +639,32 @@ index 0000000..90dc598
 +static int map_fd, prog_fd;
 +static struct bpf_object *obj;
 +
++int states_init(struct per_port_states *states);
++int states_reset(struct per_port_states *states);
 +void on_alarm(int signum);
++
++int states_init(struct per_port_states *states)
++{
++  states->rtt_a = 200;
++  states->n = 200;
++  states->N = 200;
++  states->R = 200;
++  states->B = 450;
++  states->Q = 0;
++  return 0;
++}
++
++int states_reset(struct per_port_states *states)
++{
++  states->rtt_a = 200;
++  states->rtt_tot = 0;
++  states->n = 0;
++  states->N = 200;
++  states->R = 200;
++  states->B = 0;
++  states->Q = 0;
++  return 0;
++}
 +
 +void on_alarm(int signum)
 +{
@@ -666,11 +691,13 @@ index 0000000..90dc598
 +    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
 +    printf("FUCK!!!! In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
 +    
-+    states.N = 0;
-+    states.n = 0;
-+    states.B = 0;
-+    states.rtt_tot = 0;
-+    states.Q = 300000;
++    states_reset(&states);
++    
++    if (bpf_map_update_elem(map_fd, &key, &states, BPF_ANY) != 0) {
++            fprintf(stderr, "states_map map update failed: %s\n", strerror(errno));
++            return;
++    }
++    
 +//    alarm(states.rtt_a);  // Reschedule alarm
 +      alarm(1);  // Reschedule alarm
 +}
@@ -743,12 +770,7 @@ index 0000000..90dc598
 +                if(bpf_map_lookup_elem(map_fd, &key, &states) < 0)
 +                        return XDP_ABORTED;
 +                
-+                states.rtt_a = 200;
-+                states.n = 200;
-+                states.N = 200;
-+                states.R = 200;
-+                states.B = 300;
-+                states.Q = 0;
++                states_init(&states);
 +                
 +                if (bpf_map_update_elem(map_fd, &key, &states, BPF_ANY) != 0) {
 +                        fprintf(stderr, "states_map map update failed: %s\n", strerror(errno));
