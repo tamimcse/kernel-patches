@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..64fd478
+index 0000000..f102695
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,170 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -608,18 +608,19 @@ index 0000000..64fd478
 +
 +#include <unistd.h>
 +#include <signal.h>
++#include <linux/perf_event.h>
 +
 +struct per_port_states {
 +    /*Number of bytes sent*/    
-+    unsigned long long B;
++    uint64_t B;
 +    /*Number of on-goinhg flows*/
-+    unsigned int N;
-+    unsigned long long Q;
++    uint32_t N;
++    uint64_t Q;
 +    /*Number of packets received during the control interval*/
-+    unsigned long long n;
++    uint64_t n;
 +    /*Feedback rate of this router*/
-+    unsigned long long R;
-+    unsigned int rtt_tot, rtt_a;
++    uint64_t R;
++    uint32_t rtt_tot, rtt_a;
 +};
 +
 +
@@ -632,16 +633,18 @@ index 0000000..64fd478
 +		"    -D    direct table lookups (skip fib rules)\n",
 +		prog);
 +}
-+struct bpf_object *obj;
++
++static int map_fd, prog_fd;
++static struct bpf_object *obj;
 +
 +void on_alarm(int signum);
 +
 +void on_alarm(int signum)
 +{
-+    int map_fd;
 +    struct bpf_map *map;
++    struct per_port_states allstates[PERF_MAX_STACK_DEPTH];
++    uint32_t key = 0;
 +    struct per_port_states states;
-+    unsigned int key = 0;
 +    
 +    printf("In on_alerm\n");
 +    
@@ -652,9 +655,10 @@ index 0000000..64fd478
 +            return;
 +    }
 +    
-+    if(bpf_map_lookup_elem(map_fd, &key, &states) < 0)
++    if (bpf_map_lookup_elem(map_fd, &key, allstates) < 0)
 +            return;
 +    
++    states = allstates[0];
 +    unsigned long long S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
 +    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
 +    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
@@ -665,7 +669,8 @@ index 0000000..64fd478
 +    states.B = 0;
 +    states.rtt_tot = 0;
 +    states.Q = 300000;
-+    alarm(states.rtt_a);  // Reschedule alarm
++//    alarm(states.rtt_a);  // Reschedule alarm
++      alarm(1);  // Reschedule alarm
 +}
 +
 +int main(int argc, char **argv)
@@ -678,12 +683,11 @@ index 0000000..64fd478
 +	char filename[PATH_MAX];
 +
 +	int opt;
-+	int prog_fd, map_fd;
 +	int attach = 1;
 +	int ret = 0;
 +        struct bpf_map *map;
 +        struct per_port_states states;
-+        unsigned int key = 0;
++        uint32_t key = 0;
 +        
 +        
 +        signal( SIGALRM, on_alarm ); // Install handler first,
