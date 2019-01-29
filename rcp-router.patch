@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..f102695
+index 0000000..2c13328
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,176 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -608,7 +608,8 @@ index 0000000..f102695
 +
 +#include <unistd.h>
 +#include <signal.h>
-+#include <linux/perf_event.h>
++
++#include "bpf_util.h"
 +
 +struct per_port_states {
 +    /*Number of bytes sent*/    
@@ -634,6 +635,7 @@ index 0000000..f102695
 +		prog);
 +}
 +
++static int nr_cpus;
 +static int map_fd, prog_fd;
 +static struct bpf_object *obj;
 +
@@ -642,7 +644,7 @@ index 0000000..f102695
 +void on_alarm(int signum)
 +{
 +    struct bpf_map *map;
-+    struct per_port_states allstates[PERF_MAX_STACK_DEPTH];
++    struct per_port_states allstates[nr_cpus];
 +    uint32_t key = 0;
 +    struct per_port_states states;
 +    
@@ -688,6 +690,10 @@ index 0000000..f102695
 +        struct bpf_map *map;
 +        struct per_port_states states;
 +        uint32_t key = 0;
++        
++	nr_cpus = bpf_num_possible_cpus();
++//	assert(nr_cpus != -1);
++	printf("nr_cpus:%d\n\n", nr_cpus);
 +        
 +        
 +        signal( SIGALRM, on_alarm ); // Install handler first,
