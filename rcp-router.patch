@@ -499,10 +499,10 @@ index 36f9f41..8bc7f5f 100644
  
 diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
 new file mode 100644
-index 0000000..f50f9ec
+index 0000000..f324793
 --- /dev/null
 +++ b/samples/bpf/xcp_router_kern.c
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,68 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -527,22 +527,6 @@ index 0000000..f50f9ec
 +
 +#include "bpf_helpers.h"
 +
-+#define IPV6_FLOWINFO_MASK              cpu_to_be32(0x0FFFFFFF)
-+
-+//struct bpf_map_def SEC("maps") tx_port = {
-+//	.type = BPF_MAP_TYPE_DEVMAP,
-+//	.key_size = sizeof(int),
-+//	.value_size = sizeof(int),
-+//	.max_entries = 64,
-+//};
-+//
-+//struct bpf_map_def SEC("maps") timers_map = {
-+//	.type = BPF_MAP_TYPE_ARRAY,
-+//	.key_size = sizeof(int),
-+//	.value_size = sizeof(struct timer_list),/**/
-+//	.max_entries = 4,
-+//};
-+
 +struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
 +	.key_size	= sizeof(u32),
@@ -559,7 +543,7 @@ index 0000000..f50f9ec
 +    int len = data_end - data;
 +    struct pkthdr *ph = data;
 +    struct per_port_states *states;
-+    u32 key1 = 0, key2 = 0;
++    u32 key = 0;
 +    u64 Q;
 +    struct timer_list *timer;
 +
@@ -569,7 +553,7 @@ index 0000000..f50f9ec
 +    if (unlikely(ph->version != 4))
 +        return XDP_DROP;
 +
-+    states = bpf_map_lookup_elem(&states_map, &key1);
++    states = bpf_map_lookup_elem(&states_map, &key);
 +    if (!states)
 +            return XDP_ABORTED;
 +    
@@ -589,10 +573,10 @@ index 0000000..f50f9ec
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..fbc4dd0
+index 0000000..64fd478
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,166 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -639,28 +623,6 @@ index 0000000..fbc4dd0
 +};
 +
 +
-+static int do_attach(int idx, int fd, const char *name)
-+{
-+	int err;
-+
-+	err = bpf_set_link_xdp_fd(idx, fd, 0);
-+	if (err < 0)
-+		printf("ERROR: failed to attach program to %s\n", name);
-+
-+	return err;
-+}
-+
-+static int do_detach(int idx, const char *name)
-+{
-+	int err;
-+
-+	err = bpf_set_link_xdp_fd(idx, -1, 0);
-+	if (err < 0)
-+		printf("ERROR: failed to detach program from %s\n", name);
-+
-+	return err;
-+}
-+
 +static void usage(const char *prog)
 +{
 +	fprintf(stderr,
@@ -672,12 +634,11 @@ index 0000000..fbc4dd0
 +}
 +struct bpf_object *obj;
 +
++void on_alarm(int signum);
++
 +void on_alarm(int signum)
 +{
-+    int opt, i, idx, err;
-+    int prog_fd, map_fd;
-+    int attach = 1;
-+    int ret = 0;
++    int map_fd;
 +    struct bpf_map *map;
 +    struct per_port_states states;
 +    unsigned int key = 0;
@@ -688,11 +649,11 @@ index 0000000..fbc4dd0
 +    map_fd = bpf_map__fd(map);
 +    if (map_fd < 0) {
 +            printf("states_map not found: %s\n", strerror(map_fd));
-+            return 1;
++            return;
 +    }
 +    
 +    if(bpf_map_lookup_elem(map_fd, &key, &states) < 0)
-+            return XDP_ABORTED;
++            return;
 +    
 +    unsigned long long S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
 +    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
@@ -716,7 +677,7 @@ index 0000000..fbc4dd0
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +
-+	int opt, i, idx, err;
++	int opt;
 +	int prog_fd, map_fd;
 +	int attach = 1;
 +	int ret = 0;
@@ -724,11 +685,8 @@ index 0000000..fbc4dd0
 +        struct per_port_states states;
 +        unsigned int key = 0;
 +        
-+        struct sigaction act;
-+        act.sa_handler = &on_alarm;
-+//        act.sa_mask = 0;
-+//        act.sa_flags = SA_RESTART;  // Restart interrupted system calls
-+        sigaction(SIGALRM, &act, NULL);
++        
++        signal( SIGALRM, on_alarm ); // Install handler first,
 +
 +	while ((opt = getopt(argc, argv, ":dD")) != -1) {
 +		switch (opt) {
