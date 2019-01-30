@@ -9,14 +9,14 @@ index bd601c0..4debee1 100644
 -			   vfio-mdev/ statx/ qmi/
 +			   vfio-mdev/ statx/ qmi/ bpf/
 diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
-index 36f9f41..8bc7f5f 100644
+index 36f9f41..0704c57 100644
 --- a/samples/bpf/Makefile
 +++ b/samples/bpf/Makefile
 @@ -51,6 +51,7 @@ hostprogs-y += cpustat
  hostprogs-y += xdp_adjust_tail
  hostprogs-y += xdpsock
  hostprogs-y += xdp_fwd
-+hostprogs-y += xcp_router
++hostprogs-y += rcp_router
  hostprogs-y += task_fd_query
  hostprogs-y += xdp_sample_pkts
  
@@ -24,7 +24,7 @@ index 36f9f41..8bc7f5f 100644
  xdp_adjust_tail-objs := xdp_adjust_tail_user.o
  xdpsock-objs := xdpsock_user.o
  xdp_fwd-objs := xdp_fwd_user.o
-+xcp_router-objs := xcp_router_user.o
++rcp_router-objs := rcp_router_user.o
  task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
  xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
  
@@ -32,15 +32,15 @@ index 36f9f41..8bc7f5f 100644
  always += xdp_adjust_tail_kern.o
  always += xdpsock_kern.o
  always += xdp_fwd_kern.o
-+always += xcp_router_kern.o
++always += rcp_router_kern.o
  always += task_fd_query_kern.o
  always += xdp_sample_pkts_kern.o
  
-diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
+diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..4ce567a
+index 0000000..33f932a
 --- /dev/null
-+++ b/samples/bpf/xcp_router_kern.c
++++ b/samples/bpf/rcp_router_kern.c
 @@ -0,0 +1,152 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
@@ -156,7 +156,7 @@ index 0000000..4ce567a
 +};
 +
 +/*This name needs to match to that of the file name*/
-+SEC("xcp_router")
++SEC("rcp_router")
 +int xcp_router_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
@@ -194,11 +194,11 @@ index 0000000..4ce567a
 +}
 +
 +char _license[] SEC("license") = "GPL";
-diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
+diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..71d26fa
+index 0000000..7d9fd76
 --- /dev/null
-+++ b/samples/bpf/xcp_router_user.c
++++ b/samples/bpf/rcp_router_user.c
 @@ -0,0 +1,211 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
@@ -334,7 +334,7 @@ index 0000000..71d26fa
 +	struct bpf_prog_load_attr prog_load_attr = {
 +		.prog_type	= BPF_PROG_TYPE_XDP,
 +	};
-+	const char *prog_name = "xcp_router";
++	const char *prog_name = "rcp_router";
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +
