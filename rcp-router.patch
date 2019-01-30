@@ -499,10 +499,10 @@ index 36f9f41..8bc7f5f 100644
  
 diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
 new file mode 100644
-index 0000000..f324793
+index 0000000..d614273
 --- /dev/null
 +++ b/samples/bpf/xcp_router_kern.c
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,70 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -545,7 +545,6 @@ index 0000000..f324793
 +    struct per_port_states *states;
 +    u32 key = 0;
 +    u64 Q;
-+    struct timer_list *timer;
 +
 +    if (data + 67 > data_end)
 +            return XDP_DROP;
@@ -566,6 +565,9 @@ index 0000000..f324793
 +    states->rtt_tot += ph->mf_op_prop_delay_est;
 +    if(ph->mf_op_feedback_thput > states->R)
 +        ph->mf_op_feedback_thput = states->R;
++    
++    if (bpf_map_update_elem(&states_map, &key, states, BPF_EXIST) != 0)
++            return XDP_ABORTED;
 +        
 +    return XDP_PASS;
 +}
