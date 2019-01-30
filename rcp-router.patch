@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..35c8e31
+index 0000000..5889d67
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,211 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -673,7 +673,8 @@ index 0000000..35c8e31
 +    uint64_t S = states->rtt_a == 0 ? 2000 : 2000 - states->B/states->rtt_a;
 +    states->rtt_a = states->n == 0 ? 200 : states->rtt_tot/states->n;
 +    states->R = states->N == 0 ? 2000 : states->R + ((400 * states->rtt_a * S - 226 * states->Q)/(1000 * states->N));
-+    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states->B, states->rtt_a, S, states->Q, states->N, states->R);	
++    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states->B, states->rtt_a, S, states->Q, states->N, states->R);	
++    return 0;
 +}
 +
 +void on_alarm(int signum)
@@ -682,8 +683,6 @@ index 0000000..35c8e31
 +    struct per_port_states allstates[nr_cpus];
 +    uint32_t key = 0;
 +    struct per_port_states states;
-+    
-+    printf("In on_alerm\n");
 +    
 +    map = bpf_object__find_map_by_name(obj, "states_map");
 +    map_fd = bpf_map__fd(map);
@@ -724,7 +723,6 @@ index 0000000..35c8e31
 +        uint32_t key = 0;
 +        
 +	nr_cpus = bpf_num_possible_cpus();
-+//	assert(nr_cpus != -1);
 +	printf("nr_cpus:%d\n\n", nr_cpus);
 +        
 +        
@@ -779,16 +777,14 @@ index 0000000..35c8e31
 +                
 +                if (bpf_map_update_elem(map_fd, &key, &states, BPF_ANY) != 0) {
 +                        fprintf(stderr, "states_map map update failed: %s\n", strerror(errno));
-+                        return;
++                        return XDP_ABORTED;
 +                }
 +                
-+                alarm(1);               
++                ualarm(states.rtt_a * 1000, 0);               
 +	}
 +        
 +        printf("Press ENTER key to Continue\n");  
 +        getchar(); 
 +        
-+	printf("Here I am \n");
-+
 +	return ret;
 +}
