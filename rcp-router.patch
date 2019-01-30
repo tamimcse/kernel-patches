@@ -1,31 +1,69 @@
-diff --git a/include/net/xdp_monitor.h b/include/net/xdp_monitor.h
+diff --git a/samples/Makefile b/samples/Makefile
+index bd601c0..4debee1 100644
+--- a/samples/Makefile
++++ b/samples/Makefile
+@@ -3,4 +3,4 @@
+ obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ trace_events/ livepatch/ \
+ 			   hw_breakpoint/ kfifo/ kdb/ hidraw/ rpmsg/ seccomp/ \
+ 			   configfs/ connector/ v4l/ trace_printk/ \
+-			   vfio-mdev/ statx/ qmi/
++			   vfio-mdev/ statx/ qmi/ bpf/
+diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
+index 36f9f41..8bc7f5f 100644
+--- a/samples/bpf/Makefile
++++ b/samples/bpf/Makefile
+@@ -51,6 +51,7 @@ hostprogs-y += cpustat
+ hostprogs-y += xdp_adjust_tail
+ hostprogs-y += xdpsock
+ hostprogs-y += xdp_fwd
++hostprogs-y += xcp_router
+ hostprogs-y += task_fd_query
+ hostprogs-y += xdp_sample_pkts
+ 
+@@ -107,6 +108,7 @@ cpustat-objs := bpf_load.o cpustat_user.o
+ xdp_adjust_tail-objs := xdp_adjust_tail_user.o
+ xdpsock-objs := xdpsock_user.o
+ xdp_fwd-objs := xdp_fwd_user.o
++xcp_router-objs := xcp_router_user.o
+ task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
+ xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
+ 
+@@ -164,6 +166,7 @@ always += cpustat_kern.o
+ always += xdp_adjust_tail_kern.o
+ always += xdpsock_kern.o
+ always += xdp_fwd_kern.o
++always += xcp_router_kern.o
+ always += task_fd_query_kern.o
+ always += xdp_sample_pkts_kern.o
+ 
+diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
 new file mode 100644
-index 0000000..b264ab2
+index 0000000..4ce567a
 --- /dev/null
-+++ b/include/net/xdp_monitor.h
-@@ -0,0 +1,113 @@
++++ b/samples/bpf/xcp_router_kern.c
+@@ -0,0 +1,152 @@
 +// SPDX-License-Identifier: GPL-2.0
-+/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
-+ *   This program is free software; you can redistribute it and/or
-+ *   modify it under the terms of the GNU General Public License
-+ *   as published by the Free Software Foundation; either version
-+ *   2 of the License, or (at your option) any later version.
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
 + */
-+#ifndef __LINUX_NET_XDP_MONITOR_H__
-+#define __LINUX_NET_XDP_MONITOR_H__
-+
-+#include <net/flow.h>
-+#include <linux/seq_file.h>
-+#include <linux/rcupdate.h>
-+#include <net/fib_notifier.h>
-+#include <net/fib_rules.h>
-+#include <net/inetpeer.h>
-+#include <linux/percpu.h>
-+#include <linux/notifier.h>
-+#include <linux/refcount.h>
++#define KBUILD_MODNAME "foo"
++#include <uapi/linux/bpf.h>
++#include <linux/in.h>
++#include <linux/if_ether.h>
++#include <linux/if_packet.h>
++#include <linux/if_vlan.h>
 +#include <linux/ip.h>
-+#include <linux/timer.h>
++#include <linux/ipv6.h>
++
++#include "bpf_helpers.h"
 +
 +struct pkthdr {
 +        /*Ethernet header starts here. */
@@ -110,423 +148,6 @@ index 0000000..b264ab2
 +    u32 rtt_tot, rtt_a;
 +};
 +
-+bool flow_seen (u32 ip, u16 port);
-+void reset_flow_bitmap (void);
-+void xcp_protocol (struct xdp_buff *skb, u32 size);
-+int xcp_init(void);
-+void reset_flow_bitmap (void);
-+
-+#endif /* __LINUX_NET_XDP_MONITOR_H__ */
-diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index 7446b98..c610efc 100644
---- a/net/ipv4/Makefile
-+++ b/net/ipv4/Makefile
-@@ -14,7 +14,7 @@ obj-y     := route.o inetpeer.o protocol.o \
- 	     udp_offload.o arp.o icmp.o devinet.o af_inet.o igmp.o \
- 	     fib_frontend.o fib_semantics.o fib_trie.o fib_notifier.o \
- 	     inet_fragment.o ping.o ip_tunnel_core.o gre_offload.o \
--	     metrics.o netlink.o
-+	     metrics.o netlink.o xdp_monitor.o
- 
- obj-$(CONFIG_BPFILTER) += bpfilter/
- 
-diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
-index 1fbe2f8..6d75fd2 100644
---- a/net/ipv4/af_inet.c
-+++ b/net/ipv4/af_inet.c
-@@ -120,6 +120,7 @@
- #include <linux/mroute.h>
- #endif
- #include <net/l3mdev.h>
-+#include <net/xdp_monitor.h>
- 
- #include <trace/events/sock.h>
- 
-@@ -1965,6 +1966,8 @@ static int __init inet_init(void)
- 	udplite4_register();
- 
- 	ping_init();
-+        
-+        xcp_init();
- 
- 	/*
- 	 *	Set the ICMP layer up
-diff --git a/net/ipv4/ip_input.c b/net/ipv4/ip_input.c
-index 3196cf5..127273d 100644
---- a/net/ipv4/ip_input.c
-+++ b/net/ipv4/ip_input.c
-@@ -130,6 +130,7 @@
- #include <linux/inetdevice.h>
- #include <linux/netdevice.h>
- #include <linux/etherdevice.h>
-+#include <net/xdp_monitor.h>
- 
- #include <net/snmp.h>
- #include <net/ip.h>
-@@ -148,6 +149,14 @@
- #include <linux/netlink.h>
- #include <net/dst_metadata.h>
- 
-+#ifdef __i386__
-+#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
-+#elif __x86_64__
-+#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
-+#else
-+# error unknown platform
-+#endif
-+
- /*
-  *	Process Router Attention IP option (RFC 2113)
-  */
-@@ -516,11 +525,76 @@ static struct sk_buff *ip_rcv_core(struct sk_buff *skb, struct net *net)
- int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt,
- 	   struct net_device *orig_dev)
- {
-+        u64 tsc1 = 0, tsc2 = 0;
-+        int i = 0;
-+        
- 	struct net *net = dev_net(dev);
- 
- 	skb = ip_rcv_core(skb, net);
- 	if (skb == NULL)
- 		return NET_RX_DROP;
-+
-+        struct xdp_buff *xdp = kmalloc(sizeof(*xdp), GFP_KERNEL);
-+        xdp->data = skb->data;
-+        xdp->data_end = skb->data + (skb->len - skb->data_len);
-+        xdp->data_meta = skb;
-+        
-+        for (i = 0; i < 200; i++) {
-+            register uint64_t start, end, cost_of_tsc;                      
-+            unsigned long flag;                                
-+            register unsigned cyc_high1, cyc_low1;             
-+            register unsigned cyc_high2, cyc_low2;                     
-+            preempt_disable();                                 
-+            raw_local_irq_save(flag);                          
-+            raw_local_irq_disable();                           
-+            asm volatile("CPUID\n\t"                           \
-+                         "RDTSC\n\t"                           \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
-+                         :: RDTSC_DIRTY);                      
-+//            b = flow_seen(flp->daddr);                                            
-+            asm volatile("RDTSCP\n\t"                          \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         "CPUID\n\t"                           \
-+                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
-+                         :: RDTSC_DIRTY);                      
-+            raw_local_irq_enable();                            
-+            raw_local_irq_restore(flag);                       
-+            preempt_enable();                                  
-+            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
-+            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
-+            cost_of_tsc = end - start;
-+//            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", cost_of_tsc);
-+
-+            preempt_disable();                                 
-+            raw_local_irq_save(flag);                          
-+            raw_local_irq_disable();                           
-+            asm volatile("CPUID\n\t"                           \
-+                         "RDTSC\n\t"                           \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         : "=r" (cyc_high1), "=r" (cyc_low1)   \
-+                         :: RDTSC_DIRTY);                      
-+            xcp_protocol(xdp, skb->len - skb->data_len);                                            
-+            asm volatile("RDTSCP\n\t"                          \
-+                         "mov %%edx, %0\n\t"                   \
-+                         "mov %%eax, %1\n\t"                   \
-+                         "CPUID\n\t"                           \
-+                         : "=r" (cyc_high2), "=r" (cyc_low2)   \
-+                         :: RDTSC_DIRTY);                      
-+            raw_local_irq_enable();                            
-+            raw_local_irq_restore(flag);                       
-+            preempt_enable();                                  
-+            start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
-+            end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
-+            
-+            pr_err("Cost of XCP = %llu !!!!!", (end - start - cost_of_tsc));   
-+        }
-+        
-+        
-+        
- 	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
- 		       net, NULL, skb, dev, NULL,
- 		       ip_rcv_finish);
-diff --git a/net/ipv4/xdp_monitor.c b/net/ipv4/xdp_monitor.c
-new file mode 100644
-index 0000000..a947ee1
---- /dev/null
-+++ b/net/ipv4/xdp_monitor.c
-@@ -0,0 +1,198 @@
-+// SPDX-License-Identifier: GPL-2.0
-+/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
-+ *
-+ *   This program is free software; you can redistribute it and/or
-+ *   modify it under the terms of the GNU General Public License
-+ *   as published by the Free Software Foundation; either version
-+ *   2 of the License, or (at your option) any later version.
-+ *
-+ */
-+
-+#include <net/xdp_monitor.h>
-+
-+/*Using Cuckoo filter to check if we have seen this flow*/
-+u8 cf[16384];
-+#define FINGERPRINT(X) ((X) % 256)
-+#define HASH(X) (((X) * 64) % 16381)
-+#define MAX_KICK_CNT 10
-+
-+//15 cycles
-+__always_inline bool flow_seen_cuckoo_filter (u32 ip, u16 port)
-+{
-+    u8 tmp;
-+    int i;
-+    u64 ip_port = ip;
-+    ip_port = (ip_port << 16) | port;
-+
-+    u8 fingerprint = FINGERPRINT(ip_port);
-+    u16 i1 = HASH(ip_port);
-+    u16 i2 = i1 ^ HASH(fingerprint);
-+    
-+    if (likely(cf[i1] == fingerprint || cf[i2] == fingerprint)) {
-+        return true;
-+    }else {
-+        if(!cf[i1]) {
-+            cf[i1] = fingerprint;
-+            return false;
-+        } else if (!cf[i2]) {
-+            cf[i2] = fingerprint;
-+            return false;
-+        }                      
-+        
-+        
-+        for (i = 0; i < MAX_KICK_CNT; i++) {
-+            tmp = cf[i1];
-+            cf[i1] = fingerprint;
-+            fingerprint = tmp;
-+            i1 = i1 ^ HASH(fingerprint);
-+            if (!cf[i1]) {
-+                cf[i1] = fingerprint;
-+                return false;                
-+            }
-+        }
-+        
-+        for (i = 0; i < MAX_KICK_CNT; i++) {
-+            tmp = cf[i2];
-+            cf[i2] = fingerprint;
-+            fingerprint = tmp;
-+            i2 = i2 ^ HASH(fingerprint);
-+            if (!cf[i2]) {
-+                cf[i2] = fingerprint;
-+                return false;                
-+            }
-+        }
-+        
-+        pr_err("Could not kick :-)");        
-+                
-+        return false;
-+    }
-+}
-+
-+/*Using Bittmap to check if we have seen this flow*/
-+struct bitmap {
-+    u64 arr1[1024];
-+    u64 arr2[1024];
-+    u64 port[1024];
-+};
-+struct bitmap bm2;
-+
-+//Old: 15 cycles New: 20 cycle
-+__always_inline bool flow_seen (u32 ip, u16 port)
-+{
-+    u16 part1 = ip & 65535;
-+    u16 part2 = ip >> 16;
-+   
-+    u16 part1_idx = part1 >> 6; //divide by 64
-+    u64 part1_bitmap = 1ULL << (part1 & 63); //modulo by 64
-+    u16 part2_idx = part2 >> 6; //divide by 64
-+    u64 part2_bitmap = 1ULL << (part2 & 63); //modulo by 64
-+    
-+    u16 port_idx = port >> 6; //divide by 64
-+    u64 port_bitmap = 1ULL << (port & 63); //modulo by 64
-+    
-+    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap)  && (bm2.port[port_idx] & port_bitmap))) {
-+        return true;
-+    } else {
-+        bm2.arr1[part1_idx] |= part1_bitmap;
-+        bm2.arr2[part2_idx] |= part2_bitmap;
-+        bm2.port[port_idx] |= port_bitmap;
-+        return false;
-+    }
-+}
-+
-+//Old: 15 cycles New: 20 cycle
-+__always_inline bool flow_seen_bitmap2_v2 (u32 ip, u16 port)
-+{
-+    u16 part1 = ip & 65535;
-+    u16 part2 = ip >> 16;
-+    
-+    u16 part1_idx = part1 / 64; //divide by 64
-+    u64 part1_bitmap = 1ULL << (part1 % 64); //modulo by 64
-+    u16 part2_idx = part2 / 64; //divide by 64
-+    u64 part2_bitmap = 1ULL << (part2 % 64); //modulo by 64
-+    
-+    u16 port_idx = port / 64; //divide by 64
-+    u64 port_bitmap = 1ULL << (port % 64); //modulo by 64
-+    
-+    if(likely((bm2.arr1[part1_idx] & part1_bitmap) && (bm2.arr2[part2_idx] & part2_bitmap) && (bm2.port[port_idx] & port_bitmap))) {
-+        return true;
-+    } else {
-+        bm2.arr1[part1_idx] |= part1_bitmap;
-+        bm2.arr2[part2_idx] |= part2_bitmap;
-+        bm2.port[port_idx] |= port_bitmap;
-+        return false;
-+    }
-+}
-+
-+void reset_flow_bitmap (void)
-+{
-+    memset(&bm2, 0, sizeof(bm2));
-+}
-+
-+struct per_port_states states;
-+
-+__always_inline void xcp_protocol (struct xdp_buff *xdp, u32 size)
-+{
-+    struct iphdr *iph;
-+    const struct tcphdr *th;
-+    unsigned char *ptr;
-+    u64 Q;
-+    u8 *feedback;
-+    iph = (struct iphdr *)(xdp->data + ETH_HLEN);
-+    if (unlikely(iph->version != 4))
-+        return;
-+    //Multiply by 4
-+    th = (struct tcphdr *)(iph + (iph->ihl << 2));
-+    states.n++;
-+    states.B += (xdp->data_end - xdp->data);
-+    Q = 100;
-+    if(states.Q > Q)
-+        states.Q = Q;
-+//    pr_err("source ip=%pI4 port=%d", &(iph->saddr), th->source);
-+
-+/*    if(unlikely(!flow_seen(iph->saddr, th->source))){
-+        states.N++;
-+    }*/
-+    
-+    //Jump to the beginning of the TCP option and then beginning of the MF option and then feedback field in MF option
-+    feedback = (unsigned char *)(th + sizeof(*th) + 6 + 2);
-+    states.rtt_tot += *(feedback + 1);
-+//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
-+    if(*feedback > states.R)
-+        *feedback = states.R;
-+}
-+
-+static struct timer_list timer;
-+
-+void calc_xcp_rate( struct timer_list *t )
-+{
-+    u64 S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
-+    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
-+    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
-+    mod_timer(&timer, jiffies + msecs_to_jiffies(states.rtt_a));
-+    pr_err("In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
-+
-+    states.N = 0;
-+    states.n = 0;
-+    states.B = 0;
-+    states.rtt_tot = 0;
-+    states.Q = 300000;
-+    reset_flow_bitmap();
-+}
-+
-+int xcp_init(void)
-+{
-+  /* setup your timer to call the callback */
-+//  timer_setup(&timer, calc_xcp_rate, 0);
-+  /* setup timer interval to 200 msecs */
-+//  mod_timer(&timer, jiffies + msecs_to_jiffies(200));
-+  states.rtt_a = 200;
-+  states.n = 200;
-+  states.N = 200;
-+  states.R = 200;
-+  states.B = 400;
-+  states.Q = 0;
-+  return 0;
-+}
-+
-+
-diff --git a/samples/Makefile b/samples/Makefile
-index bd601c0..4debee1 100644
---- a/samples/Makefile
-+++ b/samples/Makefile
-@@ -3,4 +3,4 @@
- obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ trace_events/ livepatch/ \
- 			   hw_breakpoint/ kfifo/ kdb/ hidraw/ rpmsg/ seccomp/ \
- 			   configfs/ connector/ v4l/ trace_printk/ \
--			   vfio-mdev/ statx/ qmi/
-+			   vfio-mdev/ statx/ qmi/ bpf/
-diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
-index 36f9f41..8bc7f5f 100644
---- a/samples/bpf/Makefile
-+++ b/samples/bpf/Makefile
-@@ -51,6 +51,7 @@ hostprogs-y += cpustat
- hostprogs-y += xdp_adjust_tail
- hostprogs-y += xdpsock
- hostprogs-y += xdp_fwd
-+hostprogs-y += xcp_router
- hostprogs-y += task_fd_query
- hostprogs-y += xdp_sample_pkts
- 
-@@ -107,6 +108,7 @@ cpustat-objs := bpf_load.o cpustat_user.o
- xdp_adjust_tail-objs := xdp_adjust_tail_user.o
- xdpsock-objs := xdpsock_user.o
- xdp_fwd-objs := xdp_fwd_user.o
-+xcp_router-objs := xcp_router_user.o
- task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
- xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
- 
-@@ -164,6 +166,7 @@ always += cpustat_kern.o
- always += xdp_adjust_tail_kern.o
- always += xdpsock_kern.o
- always += xdp_fwd_kern.o
-+always += xcp_router_kern.o
- always += task_fd_query_kern.o
- always += xdp_sample_pkts_kern.o
- 
-diff --git a/samples/bpf/xcp_router_kern.c b/samples/bpf/xcp_router_kern.c
-new file mode 100644
-index 0000000..d614273
---- /dev/null
-+++ b/samples/bpf/xcp_router_kern.c
-@@ -0,0 +1,70 @@
-+// SPDX-License-Identifier: GPL-2.0
-+/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
-+ *
-+ * This program is free software; you can redistribute it and/or
-+ * modify it under the terms of version 2 of the GNU General Public
-+ * License as published by the Free Software Foundation.
-+ *
-+ * This program is distributed in the hope that it will be useful, but
-+ * WITHOUT ANY WARRANTY; without even the implied warranty of
-+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-+ * General Public License for more details.
-+ */
-+#define KBUILD_MODNAME "foo"
-+#include <uapi/linux/bpf.h>
-+#include <linux/in.h>
-+#include <linux/if_ether.h>
-+#include <linux/if_packet.h>
-+#include <linux/if_vlan.h>
-+#include <linux/ip.h>
-+#include <linux/ipv6.h>
-+#include <net/xdp_monitor.h>
-+
-+#include "bpf_helpers.h"
-+
 +struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
 +	.key_size	= sizeof(u32),
@@ -575,12 +196,12 @@ index 0000000..d614273
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..5889d67
+index 0000000..71d26fa
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
 @@ -0,0 +1,211 @@
 +// SPDX-License-Identifier: GPL-2.0
-+/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
++/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of version 2 of the GNU General Public
