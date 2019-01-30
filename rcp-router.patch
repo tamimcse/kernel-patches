@@ -573,10 +573,10 @@ index 0000000..f324793
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/xcp_router_user.c b/samples/bpf/xcp_router_user.c
 new file mode 100644
-index 0000000..1db37b4
+index 0000000..35c8e31
 --- /dev/null
 +++ b/samples/bpf/xcp_router_user.c
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,215 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2017-18 David Ahern <dsahern@gmail.com>
 + *
@@ -610,6 +610,7 @@ index 0000000..1db37b4
 +#include <signal.h>
 +
 +#include "bpf_util.h"
++
 +
 +struct per_port_states {
 +    /*Number of bytes sent*/    
@@ -646,7 +647,7 @@ index 0000000..1db37b4
 +
 +int states_init(struct per_port_states *states)
 +{
-+  states->rtt_a = 1;
++  states->rtt_a = 200;
 +  states->n = 200;
 +  states->N = 200;
 +  states->R = 200;
@@ -657,7 +658,7 @@ index 0000000..1db37b4
 +
 +int states_reset(struct per_port_states *states)
 +{
-+  states->rtt_a = 1;
++  states->rtt_a = 200;
 +  states->rtt_tot = 0;
 +  states->n = 0;
 +  states->N = 200;
@@ -694,14 +695,8 @@ index 0000000..1db37b4
 +    if (bpf_map_lookup_elem(map_fd, &key, allstates) < 0)
 +            return;
 +    
-+    states = allstates[0];
-+//    unsigned long long S = states.rtt_a == 0 ? 2000 : 2000 - states.B/states.rtt_a;
-+//    states.rtt_a = states.n == 0 ? 200 : states.rtt_tot/states.n;
-+//    states.R = states.N == 0 ? 2000 : states.R + ((400 * states.rtt_a * S - 226 * states.Q)/(1000 * states.N));
-+//    printf("FUCK!!!! In calc_xcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states.B, states.rtt_a, S, states.Q, states.N, states.R);	
-+    
-+    calc_rcp_rate(&states);
-+    
++    states = allstates[0];    
++    calc_rcp_rate(&states);    
 +    states_reset(&states);
 +    
 +    if (bpf_map_update_elem(map_fd, &key, &states, BPF_ANY) != 0) {
@@ -709,7 +704,7 @@ index 0000000..1db37b4
 +            return;
 +    }
 +    
-+    alarm(states.rtt_a);  // Reschedule alarm
++    ualarm(states.rtt_a * 1000, 0);  // Reschedule alarm
 +}
 +
 +int main(int argc, char **argv)
