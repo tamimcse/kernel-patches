@@ -1,13 +1,3 @@
-diff --git a/samples/Makefile b/samples/Makefile
-index bd601c0..4debee1 100644
---- a/samples/Makefile
-+++ b/samples/Makefile
-@@ -3,4 +3,4 @@
- obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ trace_events/ livepatch/ \
- 			   hw_breakpoint/ kfifo/ kdb/ hidraw/ rpmsg/ seccomp/ \
- 			   configfs/ connector/ v4l/ trace_printk/ \
--			   vfio-mdev/ statx/ qmi/
-+			   vfio-mdev/ statx/ qmi/ bpf/
 diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
 index 36f9f41..0704c57 100644
 --- a/samples/bpf/Makefile
