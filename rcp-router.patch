@@ -28,7 +28,7 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..b5f0f31
+index 0000000..803e025
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
 @@ -0,0 +1,161 @@
@@ -167,8 +167,8 @@ index 0000000..b5f0f31
 +    if (data + 67 > data_end)
 +            return XDP_DROP;
 +    
-+//    if (unlikely(ph->version != 4))
-+//        return XDP_DROP;
++    if (unlikely(ph->version != 4))
++        return XDP_DROP;
 +
 +    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */        
 +    bpf_printk("Hello world %d \n", len);/* DEBUG ONLY */
@@ -182,7 +182,7 @@ index 0000000..b5f0f31
 +    if(states->Q > Q)
 +        states->Q = Q;
 +    
-+//    states->rtt_tot += ph->mf_op_prop_delay_est;
++    states->rtt_tot += ph->mf_op_prop_delay_est;
 +//    if(ph->mf_op_feedback_thput > states->R)
 +//        ph->mf_op_feedback_thput = states->R;
 +    
