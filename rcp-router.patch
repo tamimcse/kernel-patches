@@ -28,10 +28,10 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..803e025
+index 0000000..0063438
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,163 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -183,8 +183,10 @@ index 0000000..803e025
 +        states->Q = Q;
 +    
 +    states->rtt_tot += ph->mf_op_prop_delay_est;
-+//    if(ph->mf_op_feedback_thput > states->R)
++    if(ph->mf_op_feedback_thput > states->R){
 +//        ph->mf_op_feedback_thput = states->R;
++        bpf_printk("Setting RCP throughput %d \n", len);
++    }
 +    
 +    if (bpf_map_update_elem(&states_map, &key, states, BPF_EXIST) != 0)
 +            return XDP_ABORTED;
