@@ -28,10 +28,10 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..97b005c
+index 0000000..a14eda9
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,161 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -54,6 +54,13 @@ index 0000000..97b005c
 +#include <linux/ipv6.h>
 +
 +#include "bpf_helpers.h"
++
++#define bpf_printk(fmt, ...)					\
++({								\
++	       char ____fmt[] = fmt;				\
++	       bpf_trace_printk(____fmt, sizeof(____fmt),	\
++				##__VA_ARGS__);			\
++})
 +
 +struct pkthdr {
 +        /*Ethernet header starts here. */
@@ -163,10 +170,8 @@ index 0000000..97b005c
 +//    if (unlikely(ph->version != 4))
 +//        return XDP_DROP;
 +
-+    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */    
-+    char fmt[] = "Hello world %d \n";
-+    /* using bpf_trace_printk() for DEBUG ONLY */
-+    bpf_trace_printk(fmt, sizeof(fmt), len);
++    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */        
++    bpf_printk("Hello world %d \n", len);/* DEBUG ONLY */
 +
 +    states = bpf_map_lookup_elem(&states_map, &key);
 +    if (!states)
@@ -190,7 +195,7 @@ index 0000000..97b005c
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..2f897ce
+index 0000000..8b13b5d
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
 @@ -0,0 +1,259 @@
@@ -423,30 +428,30 @@ index 0000000..2f897ce
 +                ualarm(states.rtt_a * 1000, 0);               
 +	}
 +        
-+	if (attach) {
-+		for (i = 1; i < 64; ++i)
-+			bpf_map_update_elem(map_fd, &i, &i, 0);
-+	}
++//	if (attach) {
++//		for (i = 1; i < 64; ++i)
++//			bpf_map_update_elem(map_fd, &i, &i, 0);
++//	}
 +
-+	for (i = optind; i < argc; ++i) {
-+		idx = if_nametoindex(argv[i]);
-+		if (!idx)
-+			idx = strtoul(argv[i], NULL, 0);
-+
-+		if (!idx) {
-+			fprintf(stderr, "Invalid arg\n");
-+			return 1;
-+		}
-+		if (!attach) {
-+			err = do_detach(idx, argv[i]);
-+			if (err)
-+				ret = err;
-+		} else {
-+			err = do_attach(idx, prog_fd, argv[i]);
-+			if (err)
-+				ret = err;
-+		}
-+	}
++//	for (i = optind; i < argc; ++i) {
++//		idx = if_nametoindex(argv[i]);
++//		if (!idx)
++//			idx = strtoul(argv[i], NULL, 0);
++//
++//		if (!idx) {
++//			fprintf(stderr, "Invalid arg\n");
++//			return 1;
++//		}
++//		if (!attach) {
++//			err = do_detach(idx, argv[i]);
++//			if (err)
++//				ret = err;
++//		} else {
++//			err = do_attach(idx, prog_fd, argv[i]);
++//			if (err)
++//				ret = err;
++//		}
++//	}
 +        
 +        printf("Press ENTER key to Continue\n");  
 +        getchar(); 
