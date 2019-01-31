@@ -28,7 +28,7 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..a14eda9
+index 0000000..b5f0f31
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
 @@ -0,0 +1,161 @@
@@ -158,13 +158,13 @@ index 0000000..a14eda9
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
 +    void *data = (void *)(long)ctx->data;
-+    int len = data - data_end;//data_end - data;
++    int len = data_end - data;
 +    struct pkthdr *ph = data;
 +    struct per_port_states *states;
 +    u32 key = 0;
 +    u64 Q;
 +    
-+    if (data_end + 67 > data)
++    if (data + 67 > data_end)
 +            return XDP_DROP;
 +    
 +//    if (unlikely(ph->version != 4))
@@ -195,10 +195,10 @@ index 0000000..a14eda9
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..8b13b5d
+index 0000000..0d077e3
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,254 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -427,31 +427,26 @@ index 0000000..8b13b5d
 +                
 +                ualarm(states.rtt_a * 1000, 0);               
 +	}
-+        
-+//	if (attach) {
-+//		for (i = 1; i < 64; ++i)
-+//			bpf_map_update_elem(map_fd, &i, &i, 0);
-+//	}
 +
-+//	for (i = optind; i < argc; ++i) {
-+//		idx = if_nametoindex(argv[i]);
-+//		if (!idx)
-+//			idx = strtoul(argv[i], NULL, 0);
-+//
-+//		if (!idx) {
-+//			fprintf(stderr, "Invalid arg\n");
-+//			return 1;
-+//		}
-+//		if (!attach) {
-+//			err = do_detach(idx, argv[i]);
-+//			if (err)
-+//				ret = err;
-+//		} else {
-+//			err = do_attach(idx, prog_fd, argv[i]);
-+//			if (err)
-+//				ret = err;
-+//		}
-+//	}
++	for (i = optind; i < argc; ++i) {
++		idx = if_nametoindex(argv[i]);
++		if (!idx)
++			idx = strtoul(argv[i], NULL, 0);
++
++		if (!idx) {
++			fprintf(stderr, "Invalid arg\n");
++			return 1;
++		}
++		if (!attach) {
++			err = do_detach(idx, argv[i]);
++			if (err)
++				ret = err;
++		} else {
++			err = do_attach(idx, prog_fd, argv[i]);
++			if (err)
++				ret = err;
++		}
++	}
 +        
 +        printf("Press ENTER key to Continue\n");  
 +        getchar(); 
