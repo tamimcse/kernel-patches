@@ -28,10 +28,10 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..33f932a
+index 0000000..97b005c
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,156 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -151,31 +151,35 @@ index 0000000..33f932a
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
 +    void *data = (void *)(long)ctx->data;
-+    int len = data_end - data;
++    int len = data - data_end;//data_end - data;
 +    struct pkthdr *ph = data;
 +    struct per_port_states *states;
 +    u32 key = 0;
 +    u64 Q;
-+
-+    if (data + 67 > data_end)
++    
++    if (data_end + 67 > data)
 +            return XDP_DROP;
 +    
-+    if (unlikely(ph->version != 4))
-+        return XDP_DROP;
++//    if (unlikely(ph->version != 4))
++//        return XDP_DROP;
++
++    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */    
++    char fmt[] = "Hello world %d \n";
++    /* using bpf_trace_printk() for DEBUG ONLY */
++    bpf_trace_printk(fmt, sizeof(fmt), len);
 +
 +    states = bpf_map_lookup_elem(&states_map, &key);
 +    if (!states)
 +            return XDP_ABORTED;
-+    
 +    states->n++;
 +    states->B += len;
 +    Q = 100;
 +    if(states->Q > Q)
 +        states->Q = Q;
 +    
-+    states->rtt_tot += ph->mf_op_prop_delay_est;
-+    if(ph->mf_op_feedback_thput > states->R)
-+        ph->mf_op_feedback_thput = states->R;
++//    states->rtt_tot += ph->mf_op_prop_delay_est;
++//    if(ph->mf_op_feedback_thput > states->R)
++//        ph->mf_op_feedback_thput = states->R;
 +    
 +    if (bpf_map_update_elem(&states_map, &key, states, BPF_EXIST) != 0)
 +            return XDP_ABORTED;
@@ -186,10 +190,10 @@ index 0000000..33f932a
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..7d9fd76
+index 0000000..2f897ce
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,259 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -257,6 +261,29 @@ index 0000000..7d9fd76
 +int states_reset(struct per_port_states *states);
 +int calc_rcp_rate(struct per_port_states *states);
 +void on_alarm(int signum);
++
++
++static int do_attach(int idx, int fd, const char *name)
++{
++	int err;
++
++	err = bpf_set_link_xdp_fd(idx, fd, 0);
++	if (err < 0)
++		printf("ERROR: failed to attach program to %s\n", name);
++
++	return err;
++}
++
++static int do_detach(int idx, const char *name)
++{
++	int err;
++
++	err = bpf_set_link_xdp_fd(idx, -1, 0);
++	if (err < 0)
++		printf("ERROR: failed to detach program from %s\n", name);
++
++	return err;
++}
 +
 +int states_init(struct per_port_states *states)
 +{
@@ -328,11 +355,11 @@ index 0000000..7d9fd76
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +
-+	int opt;
 +	int attach = 1;
 +	int ret = 0;
 +        struct bpf_map *map;
 +        struct per_port_states states;
++        int opt, i, idx, err;
 +        uint32_t key = 0;
 +        
 +	nr_cpus = bpf_num_possible_cpus();
@@ -394,6 +421,31 @@ index 0000000..7d9fd76
 +                }
 +                
 +                ualarm(states.rtt_a * 1000, 0);               
++	}
++        
++	if (attach) {
++		for (i = 1; i < 64; ++i)
++			bpf_map_update_elem(map_fd, &i, &i, 0);
++	}
++
++	for (i = optind; i < argc; ++i) {
++		idx = if_nametoindex(argv[i]);
++		if (!idx)
++			idx = strtoul(argv[i], NULL, 0);
++
++		if (!idx) {
++			fprintf(stderr, "Invalid arg\n");
++			return 1;
++		}
++		if (!attach) {
++			err = do_detach(idx, argv[i]);
++			if (err)
++				ret = err;
++		} else {
++			err = do_attach(idx, prog_fd, argv[i]);
++			if (err)
++				ret = err;
++		}
 +	}
 +        
 +        printf("Press ENTER key to Continue\n");  
