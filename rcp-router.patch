@@ -28,7 +28,7 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..0063438
+index 0000000..8d47014
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
 @@ -0,0 +1,163 @@
@@ -122,14 +122,14 @@ index 0000000..0063438
 +	__sum16	check_tcp;
 +	__be16	urg_ptr;
 +	/*The TCP header options start here. */
-+        u32 tcp_op1;
-+        u16 tcp_op2;
++        __u32 tcp_op1;
++        __u16 tcp_op2;
 +        /*TCP MF option header starts here. */
-+        u8	mf_op_len;
-+        u8 mf_op_req_thput;           /* Required throughput in MF */ 
-+        u8 mf_op_cur_thput;           /* Current throughput in MF */
-+        u8 mf_op_feedback_thput;      /* Feedback throughput in MF */
-+        u8 mf_op_prop_delay_est;
++        __u8	mf_op_len;
++        __u8 mf_op_req_thput;           /* Required throughput in MF */ 
++        __u8 mf_op_cur_thput;           /* Current throughput in MF */
++        __u8 mf_op_feedback_thput;      /* Feedback throughput in MF */
++        __u8 mf_op_prop_delay_est;
 +};
 +
 +struct per_port_states {
@@ -184,8 +184,8 @@ index 0000000..0063438
 +    
 +    states->rtt_tot += ph->mf_op_prop_delay_est;
 +    if(ph->mf_op_feedback_thput > states->R){
-+//        ph->mf_op_feedback_thput = states->R;
-+        bpf_printk("Setting RCP throughput %d \n", len);
++        ph->mf_op_feedback_thput = states->R;
++        bpf_printk("Setting RCP throughput %llu \n", states->R);
 +    }
 +    
 +    if (bpf_map_update_elem(&states_map, &key, states, BPF_EXIST) != 0)
