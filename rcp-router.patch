@@ -28,7 +28,7 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..9118638
+index 0000000..90ea83f
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
 @@ -0,0 +1,162 @@
@@ -134,19 +134,19 @@ index 0000000..9118638
 +
 +struct per_port_states {
 +    /*Number of bytes sent*/    
-+    u64 B;
-+    u32 N;
-+    u64 Q;
++    __u64 B;
++    __u32 N;
++    __u64 Q;
 +    /*Number of packets received during the control interval*/
-+    u64 n;
++    __u64 n;
 +    /*Feedback rate of this router*/
-+    u64 R;
-+    u32 rtt_tot, rtt_a;
++    __u64 R;
++    __u32 rtt_tot, rtt_a;
 +};
 +
 +struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
-+	.key_size	= sizeof(u32),
++	.key_size	= sizeof(__u32),
 +	.value_size	= sizeof(struct per_port_states),
 +	.max_entries	= 1,
 +};
@@ -160,8 +160,8 @@ index 0000000..9118638
 +    int len = data_end - data;
 +    struct pkthdr *ph = data;
 +    struct per_port_states *states;
-+    u32 key = 0;
-+    u64 Q;
++    __u32 key = 0;
++    __u64 Q;
 +    
 +    if (data + 67 > data_end)
 +            return XDP_DROP;
@@ -196,10 +196,10 @@ index 0000000..9118638
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..c157daa
+index 0000000..fea52f4
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,302 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -244,14 +244,14 @@ index 0000000..c157daa
 +
 +struct per_port_states {
 +    /*Number of bytes sent*/    
-+    uint64_t B;
-+    uint32_t N;
-+    uint64_t Q;
++    __u64 B;
++    __u32 N;
++    __u64 Q;
 +    /*Number of packets received during the control interval*/
-+    uint64_t n;
++    __u64 n;
 +    /*Feedback rate of this router*/
-+    uint64_t R;
-+    uint32_t rtt_tot, rtt_a;
++    __u64 R;
++    __u32 rtt_tot, rtt_a;
 +};
 +
 +static void usage(const char *prog)
@@ -267,9 +267,16 @@ index 0000000..c157daa
 +static int nr_cpus;
 +static int map_fd, prog_fd;
 +static struct bpf_object *obj;
++static int xdp_flags = XDP_FLAGS_HW_MODE;
++static int ifindex;
 +
 +void on_alarm(int signum);
 +
++static void int_exit(int sig)
++{
++	bpf_set_link_xdp_fd(ifindex, -1, xdp_flags);
++	exit(0);
++}
 +
 +static int do_attach(int idx, int fd, const char *name)
 +{
@@ -338,7 +345,7 @@ index 0000000..c157daa
 +      if(res.Q > states[i].Q)
 +          res.Q = states[i].Q;
 +    }    
-+    uint64_t S = states->rtt_a == 0 ? 2000 : 2000 - res.B/states[0].rtt_a;
++    __u64 S = states->rtt_a == 0 ? 2000 : 2000 - res.B/states[0].rtt_a;
 +    res.rtt_a = states->n == 0 ? 200 : res.rtt_tot/res.n;
 +    res.R = states[0].R * (1 + (ALPHA * S - BETA * res.Q/states[0].rtt_a)/C);
 +    states_reset(states, arr_size, res.R, res.rtt_a);
@@ -361,7 +368,7 @@ index 0000000..c157daa
 +{
 +    struct bpf_map *map;
 +    struct per_port_states allstates[nr_cpus];
-+    uint32_t key = 0;
++    __u32 key = 0;
 +    
 +    printf("In on_alarm()\n");
 +    
@@ -398,8 +405,8 @@ index 0000000..c157daa
 +	int ret = 0;
 +        struct bpf_map *map;
 +        struct per_port_states allstates[nr_cpus];
-+        int opt, i, idx, err;
-+        uint32_t key = 0;
++        int opt, i, err;
++        __u32 key = 0;
 +        
 +	nr_cpus = bpf_num_possible_cpus();
 +	printf("nr_cpus:%d\n\n", nr_cpus);
@@ -452,31 +459,38 @@ index 0000000..c157daa
 +                }
 +                
 +                states_init(allstates, nr_cpus);
++                
++                printf("key=%u", key);
++                
++                key = 0;
 +
 +                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
 +                        printf("states_map map update failed: %s\n", strerror(map_fd));
 +                        return XDP_ABORTED;
 +                }
++                
++//                signal(SIGINT, int_exit);
++//                signal(SIGTERM, int_exit);
 +   
 +                signal( SIGALRM, on_alarm ); // Install handler first,
 +                ualarm(200 * 1000, 0);  //200ms 
 +	}
 +
 +	for (i = optind; i < argc; ++i) {
-+		idx = if_nametoindex(argv[i]);
-+		if (!idx)
-+			idx = strtoul(argv[i], NULL, 0);
++		ifindex = if_nametoindex(argv[i]);
++		if (!ifindex)
++			ifindex = strtoul(argv[i], NULL, 0);
 +
-+		if (!idx) {
++		if (!ifindex) {
 +			fprintf(stderr, "Invalid arg\n");
 +			return 1;
 +		}
 +		if (!attach) {
-+			err = do_detach(idx, argv[i]);
++			err = do_detach(ifindex, argv[i]);
 +			if (err)
 +				ret = err;
 +		} else {
-+			err = do_attach(idx, prog_fd, argv[i]);
++			err = do_attach(ifindex, prog_fd, argv[i]);
 +			if (err)
 +				ret = err;
 +		}
