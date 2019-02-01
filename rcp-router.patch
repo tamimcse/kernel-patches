@@ -28,10 +28,10 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..75b82f1
+index 0000000..9118638
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,162 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -135,7 +135,6 @@ index 0000000..75b82f1
 +struct per_port_states {
 +    /*Number of bytes sent*/    
 +    u64 B;
-+    /*Number of on-goinhg flows*/
 +    u32 N;
 +    u64 Q;
 +    /*Number of packets received during the control interval*/
@@ -197,10 +196,10 @@ index 0000000..75b82f1
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..d18ab76
+index 0000000..c157daa
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,288 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -235,12 +234,17 @@ index 0000000..d18ab76
 +
 +#include "bpf_util.h"
 +
++#define C 40*1024*1024*1024
++#define ALPHA .4
++#define BETA .6
++#define Q_MAX 20000
++#define R_INIT 10 * 1024 * 1024
++#define RTT_A_INIT 200
 +
 +
 +struct per_port_states {
 +    /*Number of bytes sent*/    
 +    uint64_t B;
-+    /*Number of on-goinhg flows*/
 +    uint32_t N;
 +    uint64_t Q;
 +    /*Number of packets received during the control interval*/
@@ -249,7 +253,6 @@ index 0000000..d18ab76
 +    uint64_t R;
 +    uint32_t rtt_tot, rtt_a;
 +};
-+
 +
 +static void usage(const char *prog)
 +{
@@ -265,9 +268,6 @@ index 0000000..d18ab76
 +static int map_fd, prog_fd;
 +static struct bpf_object *obj;
 +
-+int states_init(struct per_port_states states[], int arr_size);
-+int states_reset(struct per_port_states states[], int arr_size);
-+int calc_rcp_rate(struct per_port_states states[], int arr_size);
 +void on_alarm(int signum);
 +
 +
@@ -293,45 +293,69 @@ index 0000000..d18ab76
 +	return err;
 +}
 +
-+int states_init(struct per_port_states states[], int arr_size)
++static int states_init(struct per_port_states states[], int arr_size)
 +{
 +    int i = 0;
 +    for (; i < arr_size; i++) {
-+        states[i].rtt_a = 200;
-+        states[i].n = 200;
-+        states[i].N = 200;
-+        states[i].R = 200;
-+        states[i].B = 450;
-+        states[i].Q = 0;        
++        states[i].rtt_a = RTT_A_INIT;
++        states[i].R = R_INIT;
++        states[i].rtt_tot = 0;
++        states[i].n = 0;
++        states[i].B = 0;
++        states[i].Q = Q_MAX;        
 +    }
 +
-+  return 0;
++    return 0;
 +}
 +
-+int states_reset(struct per_port_states states[], int arr_size)
++static int states_reset(struct per_port_states states[], int arr_size, uint64_t R, uint32_t rtt_a)
 +{
 +  int i = 0;  
 +  for (; i < arr_size; i++) {
-+    states[i].rtt_a = 200;
++    states[i].rtt_a = rtt_a;
++    states[i].R = R;
 +    states[i].rtt_tot = 0;
 +    states[i].n = 0;
-+    states[i].N = 200;
-+    states[i].R = 200;
 +    states[i].B = 0;
-+    states[i].Q = 0;      
++    states[i].Q = Q_MAX;      
 +  }  
 +
 +  return 0;
 +}
 +
-+int calc_rcp_rate(struct per_port_states states[], int arr_size)
++static int calc_rcp_rate(struct per_port_states states[], int arr_size)
 +{
-+//    uint64_t S = states->rtt_a == 0 ? 2000 : 2000 - states->B/states->rtt_a;
-+//    states->rtt_a = states->n == 0 ? 200 : states->rtt_tot/states->n;
-+//    states->R = states->N == 0 ? 2000 : states->R + ((400 * states->rtt_a * S - 226 * states->Q)/(1000 * states->N));
-+//    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu N=%u %llu \n", states->B, states->rtt_a, S, states->Q, states->N, states->R);	
++  struct per_port_states res;
++  int i = 0;
++
++  res.Q = 2000000;
++  res.B = 0;
++  
++    for (; i < arr_size; i++) {
++      res.rtt_tot += states[i].rtt_a;
++      res.B += states[i].B;
++      res.n += states[i].n;
++      if(res.Q > states[i].Q)
++          res.Q = states[i].Q;
++    }    
++    uint64_t S = states->rtt_a == 0 ? 2000 : 2000 - res.B/states[0].rtt_a;
++    res.rtt_a = states->n == 0 ? 200 : res.rtt_tot/res.n;
++    res.R = states[0].R * (1 + (ALPHA * S - BETA * res.Q/states[0].rtt_a)/C);
++    states_reset(states, arr_size, res.R, res.rtt_a);
++    
++    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu R=%llu \n", states[0].B, states[0].rtt_a, S, states[0].Q, states[0].R);	
 +    return 0;
 +}
++
++static int states_print(struct per_port_states states[], int arr_size) {
++  int i = 0;  
++  for (; i < arr_size; i++) {
++    printf("%d: B=%llu RTT_a=%u Q=%llu R=%llu n=%llu RTT_tot=%u \n", i, states[i].B, states[i].rtt_a, states[i].Q, states[i].R, states[i].n, states[i].rtt_tot);
++  }  
++
++  return 0;
++}
++
 +
 +void on_alarm(int signum)
 +{
@@ -352,10 +376,9 @@ index 0000000..d18ab76
 +            return;
 +       
 +    calc_rcp_rate(allstates, nr_cpus);    
-+    states_reset(allstates, nr_cpus);
 +    
 +    if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
-+            fprintf(stderr, "states_map map update failed: %s\n", strerror(errno));
++            printf("states_map map update failed: %s\n", strerror(map_fd));
 +            return;
 +    }
 +    
@@ -424,15 +447,14 @@ index 0000000..d18ab76
 +		}
 +                
 +                if(bpf_map_lookup_elem(map_fd, &key, allstates) < 0) {
-+                        printf("states_map map lookup failed\n", strerror(map_fd));
++                        printf("states_map map lookup failed %s \n", strerror(map_fd));
 +                        return XDP_ABORTED;
 +                }
 +                
 +                states_init(allstates, nr_cpus);
 +
-+                
 +                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
-+                        fprintf(stderr, "states_map map update failed: %s\n", strerror(errno));
++                        printf("states_map map update failed: %s\n", strerror(map_fd));
 +                        return XDP_ABORTED;
 +                }
 +   
