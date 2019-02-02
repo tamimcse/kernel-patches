@@ -196,10 +196,10 @@ index 0000000..90ea83f
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..fea52f4
+index 0000000..8df86cd
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,293 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -452,17 +452,8 @@ index 0000000..fea52f4
 +			printf("states_map map not found: %s\n", strerror(map_fd));
 +			return 1;
 +		}
-+                
-+                if(bpf_map_lookup_elem(map_fd, &key, allstates) < 0) {
-+                        printf("states_map map lookup failed %s \n", strerror(map_fd));
-+                        return XDP_ABORTED;
-+                }
-+                
++
 +                states_init(allstates, nr_cpus);
-+                
-+                printf("key=%u", key);
-+                
-+                key = 0;
 +
 +                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
 +                        printf("states_map map update failed: %s\n", strerror(map_fd));
