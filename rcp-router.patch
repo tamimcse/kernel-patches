@@ -28,10 +28,10 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..90ea83f
+index 0000000..73aeacf
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,161 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -135,7 +135,6 @@ index 0000000..90ea83f
 +struct per_port_states {
 +    /*Number of bytes sent*/    
 +    __u64 B;
-+    __u32 N;
 +    __u64 Q;
 +    /*Number of packets received during the control interval*/
 +    __u64 n;
@@ -196,10 +195,10 @@ index 0000000..90ea83f
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..8df86cd
+index 0000000..7227cac
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,294 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -245,7 +244,6 @@ index 0000000..8df86cd
 +struct per_port_states {
 +    /*Number of bytes sent*/    
 +    __u64 B;
-+    __u32 N;
 +    __u64 Q;
 +    /*Number of packets received during the control interval*/
 +    __u64 n;
@@ -452,9 +450,11 @@ index 0000000..8df86cd
 +			printf("states_map map not found: %s\n", strerror(map_fd));
 +			return 1;
 +		}
-+
++                
 +                states_init(allstates, nr_cpus);
-+
++                
++                //WTF!!! : fix the hack in states_init
++                key = 0;
 +                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
 +                        printf("states_map map update failed: %s\n", strerror(map_fd));
 +                        return XDP_ABORTED;
