@@ -195,10 +195,10 @@ index 0000000..73aeacf
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..e25bfc6
+index 0000000..d9fb199
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,293 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -239,6 +239,7 @@ index 0000000..e25bfc6
 +#define Q_MAX 20000
 +#define R_INIT 10 * 1024 * 1024
 +#define RTT_A_INIT 200
++#define NUM_PORTS 64
 +
 +
 +struct per_port_states {
@@ -266,15 +267,11 @@ index 0000000..e25bfc6
 +static int map_fd, prog_fd;
 +static struct bpf_object *obj;
 +static int xdp_flags = XDP_FLAGS_HW_MODE;
-+static int ifindex;
++static int ifindex[NUM_PORTS];
++static char *netdevs[NUM_PORTS];
++static int args_count;
 +
 +void on_alarm(int signum);
-+
-+static void int_exit(int sig)
-+{
-+	bpf_set_link_xdp_fd(ifindex, -1, xdp_flags);
-+	exit(0);
-+}
 +
 +static int do_attach(int idx, int fd, const char *name)
 +{
@@ -296,6 +293,20 @@ index 0000000..e25bfc6
 +		printf("ERROR: failed to detach program from %s\n", name);
 +
 +	return err;
++}
++
++static void int_exit(int sig)
++{
++        int i, err = 0;
++//	bpf_set_link_xdp_fd(ifindex, -1, xdp_flags);
++        
++        for (i = optind; i < args_count; ++i) {
++            err = do_detach(ifindex[i], netdevs[i]);
++            if (err)
++                    printf("Error detaching the program \n");    
++        }
++        
++	exit(0);
 +}
 +
 +static int states_init(struct per_port_states states[], int arr_size)
@@ -453,32 +464,27 @@ index 0000000..e25bfc6
 +                        return XDP_ABORTED;
 +                }
 +                
-+//                signal(SIGINT, int_exit);
-+//                signal(SIGTERM, int_exit);
++                signal(SIGINT, int_exit);
++                signal(SIGTERM, int_exit);
 +   
 +                signal( SIGALRM, on_alarm ); // Install handler first,
 +                ualarm(200 * 1000, 0);  //200ms 
 +	}
 +
++        args_count = argc;
 +	for (i = optind; i < argc; ++i) {
-+		ifindex = if_nametoindex(argv[i]);
-+		if (!ifindex)
-+			ifindex = strtoul(argv[i], NULL, 0);
-+
-+		if (!ifindex) {
-+			fprintf(stderr, "Invalid arg\n");
-+			return 1;
-+		}
-+		if (!attach) {
-+			err = do_detach(ifindex, argv[i]);
-+			if (err)
-+				ret = err;
-+		} else {
-+			err = do_attach(ifindex, prog_fd, argv[i]);
-+			if (err)
-+				ret = err;
-+		}
-+	}
++            netdevs[i] = argv[i];
++            ifindex[i] = if_nametoindex(argv[i]);
++            if (!ifindex[i])
++                    ifindex[i] = strtoul(argv[i], NULL, 0);
++            if (!ifindex[i]) {
++                    fprintf(stderr, "Invalid arg\n");
++                    return 1;
++            }
++            err = do_attach(ifindex[i], prog_fd, argv[i]);
++            if (err)
++                    ret = err;
++        }
 +
 +        while (1) {
 +            pause();
