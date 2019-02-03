@@ -28,7 +28,7 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..73aeacf
+index 0000000..fca79b3
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
 @@ -0,0 +1,161 @@
@@ -150,8 +150,8 @@ index 0000000..73aeacf
 +	.max_entries	= 1,
 +};
 +
-+/*This name needs to match to that of the file name*/
-+SEC("rcp_router")
++
++SEC("rcp_protocol")
 +int xcp_router_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
@@ -195,10 +195,10 @@ index 0000000..73aeacf
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/rcp_router_user.c b/samples/bpf/rcp_router_user.c
 new file mode 100644
-index 0000000..d9fb199
+index 0000000..ababcbc
 --- /dev/null
 +++ b/samples/bpf/rcp_router_user.c
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,292 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -399,7 +399,6 @@ index 0000000..d9fb199
 +	struct bpf_prog_load_attr prog_load_attr = {
 +		.prog_type	= BPF_PROG_TYPE_XDP,
 +	};
-+	const char *prog_name = "rcp_router";
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +
@@ -441,7 +440,7 @@ index 0000000..d9fb199
 +		if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
 +			return 1;
 +
-+		prog = bpf_object__find_program_by_title(obj, prog_name);
++		prog = bpf_object__find_program_by_title(obj, "rcp_protocol");
 +		prog_fd = bpf_program__fd(prog);
 +		if (prog_fd < 0) {
 +			printf("program not found: %s\n", strerror(prog_fd));
