@@ -28,10 +28,10 @@ index 36f9f41..0704c57 100644
  
 diff --git a/samples/bpf/rcp_router_kern.c b/samples/bpf/rcp_router_kern.c
 new file mode 100644
-index 0000000..fca79b3
+index 0000000..00d671f
 --- /dev/null
 +++ b/samples/bpf/rcp_router_kern.c
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,167 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -151,6 +151,12 @@ index 0000000..fca79b3
 +};
 +
 +
++/*
++ * sudo ./bpftool prog show
++ * sudo ./bpftool prog dump xlated id 4
++ * sudo ./bpftool prog dump jited id 4
++ */
++
 +SEC("rcp_protocol")
 +int xcp_router_prog(struct xdp_md *ctx)
 +{
@@ -168,7 +174,7 @@ index 0000000..fca79b3
 +    if (unlikely(ph->version != 4))
 +        return XDP_DROP;
 +
-+    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */        
++    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */
 +    bpf_printk("Hello world %d \n", len);/* DEBUG ONLY */
 +
 +    states = bpf_map_lookup_elem(&states_map, &key);
