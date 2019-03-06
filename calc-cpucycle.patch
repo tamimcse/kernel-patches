@@ -1,0 +1,149 @@
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index cc275c7..449fb09 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -26,6 +26,14 @@
+ #include <linux/notifier.h>
+ #include <linux/refcount.h>
+ 
++#ifdef __i386__
++#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
++#elif __x86_64__
++#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
++#else
++# error unknown platform
++#endif
++
+ struct fib_config {
+ 	u8			fc_dst_len;
+ 	u8			fc_tos;
+@@ -328,9 +336,126 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+ 	rcu_read_lock();
+ 
+ 	tb = fib_get_table(net, RT_TABLE_MAIN);
+-	if (tb)
+-		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
+-
++	if (tb) {
++            struct net_device *dev;
++            register uint64_t start, start1, start2, end, end1, end2, cost_of_tsc;                      
++            unsigned long flag;                  
++            int i;
++            register unsigned cyc_high1, cyc_low1;             
++            register unsigned cyc_high2, cyc_low2;            
++            
++            for (i = 0; i < 200; i++) {
++                preempt_disable();                                 
++                raw_local_irq_save(flag);                          
++                raw_local_irq_disable();                           
++                asm volatile("CPUID\n\t"                           \
++                             "RDTSC\n\t"                           \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                             :: RDTSC_DIRTY);                      
++    //            b = flow_seen(flp->daddr);                                            
++                asm volatile("RDTSCP\n\t"                          \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             "CPUID\n\t"                           \
++                             : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                             :: RDTSC_DIRTY);                      
++                raw_local_irq_enable();                            
++                raw_local_irq_restore(flag);                       
++                preempt_enable();                                  
++                start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++                end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++                cost_of_tsc = end - start;
++    //            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", cost_of_tsc);
++
++                preempt_disable();                                 
++                raw_local_irq_save(flag);                          
++                raw_local_irq_disable();                           
++                asm volatile("CPUID\n\t"                           \
++                             "RDTSC\n\t"                           \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                             :: RDTSC_DIRTY);                      
++                err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);                                            
++                asm volatile("RDTSCP\n\t"                          \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             "CPUID\n\t"                           \
++                             : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                             :: RDTSC_DIRTY);                      
++                raw_local_irq_enable();                            
++                raw_local_irq_restore(flag);                       
++                preempt_enable();                                  
++                start1 = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++                end1 = ((uint64_t)cyc_high2 << 32) | cyc_low2;   
++                
++                if (!err) {
++                    pr_err("LC-Trie=%llu !!!!!", (end1-start1 - cost_of_tsc));
++                }
++            }
++            
++            for (i = 0; i < 200; i++) {
++                preempt_disable();                                 
++                raw_local_irq_save(flag);                          
++                raw_local_irq_disable();                           
++                asm volatile("CPUID\n\t"                           \
++                             "RDTSC\n\t"                           \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                             :: RDTSC_DIRTY);                      
++    //            b = flow_seen(flp->daddr);                                            
++                asm volatile("RDTSCP\n\t"                          \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             "CPUID\n\t"                           \
++                             : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                             :: RDTSC_DIRTY);                      
++                raw_local_irq_enable();                            
++                raw_local_irq_restore(flag);                       
++                preempt_enable();                                  
++                start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++                end = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++                cost_of_tsc = end - start;
++    //            pr_info(KERN_INFO "\n Cost=  %llu clock cycles !!!!", cost_of_tsc);
++                
++                preempt_disable();                                 
++                raw_local_irq_save(flag);                          
++                raw_local_irq_disable();                           
++                asm volatile("CPUID\n\t"                           \
++                             "RDTSC\n\t"                           \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                             :: RDTSC_DIRTY);                      
++                sail_lookup(&tb->sail, flp->daddr, &dev);
++                asm volatile("RDTSCP\n\t"                          \
++                             "mov %%edx, %0\n\t"                   \
++                             "mov %%eax, %1\n\t"                   \
++                             "CPUID\n\t"                           \
++                             : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                             :: RDTSC_DIRTY);                      
++                raw_local_irq_enable();                            
++                raw_local_irq_restore(flag);                       
++                preempt_enable();                                  
++                start2 = ((uint64_t)cyc_high1 << 32) | cyc_low1;    
++                end2 = ((uint64_t)cyc_high2 << 32) | cyc_low2;
++
++//                if (dev && !err && res && res->fi && res->fi->fib_dev &&
++//                                strcmp(res->fi->fib_dev->name, dev->name) &&
++//                                strcmp(res->fi->fib_dev->name, "lo") &&
++//                                strcmp(res->fi->fib_dev->name, "wlo1")) {
++//                        pr_err("sail_lookup %pI4 => %s", &flp->daddr, dev->name);
++//                        pr_err("fib_lookup: %pI4 => %s", &flp->daddr,
++//                               res->fi->fib_dev->name);
++//                }
++                if (dev) {
++                    pr_err("SAIL=%llu !!!!!", (end2-start2 - cost_of_tsc));
++                }
++            }
++        }
+ 	if (err == -EAGAIN)
+ 		err = -ENETUNREACH;
+ 
