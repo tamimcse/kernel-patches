@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..19eb6b5
+index 0000000..161ecee
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,986 @@
+@@ -0,0 +1,1030 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -776,6 +776,47 @@ index 0000000..19eb6b5
 +    return pushed;
 +}
 +
++static bool from_24_to_32(struct sail *s, u64 n24_idx, u64 c24_idx)
++{
++    bool pushed = false;
++    bool is_push_needed = false;
++    u64 n32_idx;
++    int j;
++
++    if(s->C24[c24_idx] == 0){
++        pr_err("C24[i]=NULL in from_24_to_32 !!!!!!!!");
++        return pushed;
++    }
++    
++    n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE;
++
++    /*Longer prefix exist in level 24*/
++    for (j = 0; j < 256; j++) {
++        if (s->N32[n32_idx + j] > 0) {
++            is_push_needed = true;
++            break;
++        }
++    }
++
++    if(!is_push_needed)
++        return pushed;
++
++    for (j = 0; j < 256; j++) {
++        if (s->P24[n24_idx] > s->P32[n32_idx + j]) {
++            s->N32[n32_idx + j] = s->N24[n24_idx];
++            s->P32[n32_idx + j] = s->P24[n24_idx];
++            pushed = true;
++        }
++    }
++
++    if (pushed) {
++        s->N24[n24_idx] = 0;
++        s->P24[n24_idx] = 0;
++    }
++        
++    return pushed;
++}
++
 +int sail_insert(struct sail *s, u32 key, u8 prefix_len,
 +		struct net_device *dev)
 +{
@@ -862,7 +903,7 @@ index 0000000..19eb6b5
 +				continue;
 +			s->N16[n16_idx + i] = netdev_index;
 +			s->P16[n16_idx + i] = prefix_len;
-+                        from_16_to_24(s, n16_idx);
++                        from_16_to_24(s, n16_idx + i);
 +		}
 +		goto finish;
 +	}
@@ -894,7 +935,10 @@ index 0000000..19eb6b5
 +	/*Extract bit 17~24 and calculate index to level 24*/
 +	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
 +	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;       
++	ck24_off = (key & 65280) >> 8;     
++	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
 +
 +	if (prefix_len <= 24) {
 +		/*All the leafs in level 17~24 will be stored in level 24.*/
@@ -905,6 +949,9 @@ index 0000000..19eb6b5
 +				continue;
 +			s->N24[n24_idx + i] = netdev_index;
 +			s->P24[n24_idx + i] = prefix_len;
++                        /*There is a chunk in level 32*/
++                        if(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))
++                            from_24_to_32(s, n24_idx + i, c24_idx);
 +		}
 +                
 +                /*This node in level 16 also should be pushed to level 24*/
@@ -922,8 +969,6 @@ index 0000000..19eb6b5
 +	 * 2. Insert a new chunk in level 32
 +	 * 3. Update the CK24 and C24 based on the newly inserted chunk
 +	 */
-+	part_idx = ck24_off / 64;
-+	part_off = ck24_off % 64;
 +	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +		/*Step 1*/
 +		chunk_id = calc_ckid32_from_ck24(s->CK24, ck24_idx,
@@ -941,7 +986,6 @@ index 0000000..19eb6b5
 +			goto error;
 +	}
 +
-+	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
 +	/*Extract 8 bit from MSB and calculate index to level 32*/
 +	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
 +
