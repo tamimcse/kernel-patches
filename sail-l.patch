@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..01653a7
+index 0000000..19eb6b5
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,997 @@
+@@ -0,0 +1,986 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -907,21 +907,10 @@ index 0000000..01653a7
 +			s->P24[n24_idx + i] = prefix_len;
 +		}
 +                
-+                /*Nothing to push from level 16*/
-+                if(s->N16[n16_idx] == 0)
-+                    goto finish;
-+
 +                /*This node in level 16 also should be pushed to level 24*/
-+                int level_16_netdev_index = s->N16[n16_idx];
-+                int level_16_prefix_len = s->P16[n16_idx];
-+                int chunk_off = (s->C16[n16_idx] - 1) * CHUNK_SIZE;
-+                int j;
-+                for (j = 0; j < 256; j++) {
-+                    if (level_16_prefix_len > s->P24[chunk_off + j]) {
-+                        s->N24[chunk_off + j] = level_16_netdev_index;
-+                        s->P24[chunk_off + j] = level_16_prefix_len;
-+                    }
-+                }
++                if(s->N16[n16_idx] != 0)
++                    from_16_to_24(s, n16_idx);
++                
 +		goto finish;
 +	}       
 +
