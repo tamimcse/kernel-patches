@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..161ecee
+index 0000000..3a3dd80
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,1030 @@
+@@ -0,0 +1,1034 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -999,6 +999,10 @@ index 0000000..161ecee
 +			s->N32[n32_idx + i] = netdev_index;
 +			s->P32[n32_idx + i] = prefix_len;
 +		}
++                
++                /*This node in level 24 also should be pushed to level 32*/
++                if(s->N24[n24_idx] != 0)
++                    from_24_to_32(s, n24_idx, c24_idx);
 +		goto finish;
 +	}
 +
