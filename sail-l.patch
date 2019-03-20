@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..9b50885
+index 0000000..01653a7
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,974 @@
+@@ -0,0 +1,997 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -737,6 +737,45 @@ index 0000000..9b50885
 +	return 0;
 +}
 +
++static bool from_16_to_24(struct sail *s, u16 n16_idx)
++{
++    bool pushed = false;
++    bool is_push_needed = false;
++    int n24_idx;
++    int j;
++
++    if(s->C16[n16_idx] == 0)
++        return pushed;
++    
++    n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE;
++
++    /*Longer prefix exist in level 24*/
++    for (j = 0; j < 256; j++) {
++        if (s->N24[n24_idx + j] > 0) {
++            is_push_needed = true;
++            break;
++        }
++    }
++
++    if(!is_push_needed)
++        return pushed;
++
++    for (j = 0; j < 256; j++) {
++        if (s->P16[n16_idx] > s->P24[n24_idx + j]) {
++            s->N24[n24_idx + j] = s->N16[n16_idx];
++            s->P24[n24_idx + j] = s->P16[n16_idx];
++            pushed = true;
++        }
++    }
++
++    if (pushed) {
++        s->N16[n16_idx] = 0;
++        s->P16[n16_idx] = 0;
++    }
++        
++    return pushed;
++}
++
 +int sail_insert(struct sail *s, u32 key, u8 prefix_len,
 +		struct net_device *dev)
 +{
@@ -814,24 +853,7 @@ index 0000000..9b50885
 +
 +	if (prefix_len <= 16) {
 +	    	/*Check the longest prefix on the path.*/
-+            if(s->C16[n16_idx] > 0) {
-+                int chunk_off = (s->C16[n16_idx] - 1) * CHUNK_SIZE;
-+                int j;
-+                for (j = 0; j < 256; j++) {
-+                    /*Longer prefix exist in level 24*/
-+                    if (s->N24[chunk_off + j] > 0) {
-+                        for (j = 0; j < 256; j++) {
-+                            if (prefix_len > s->P24[chunk_off + j]) {
-+                                s->N24[chunk_off + j] = netdev_index;
-+                                s->P24[chunk_off + j] = prefix_len;
-+                            }
-+                        }
-+                        goto finish;
-+                    }
-+                }
-+                
-+                /*No longer prefix exist in level 24*/
-+            }
++
 +		/*All the leafs in level 1~16 will be stored in level 16.*/
 +		num_leafs = 1U << (16 - prefix_len);
 +		for (i = 0; i < num_leafs; i++) {
@@ -840,6 +862,7 @@ index 0000000..9b50885
 +				continue;
 +			s->N16[n16_idx + i] = netdev_index;
 +			s->P16[n16_idx + i] = prefix_len;
++                        from_16_to_24(s, n16_idx);
 +		}
 +		goto finish;
 +	}
