@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..e4e6681
+index 0000000..9b50885
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,956 @@
+@@ -0,0 +1,974 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -829,6 +829,8 @@ index 0000000..e4e6681
 +                        goto finish;
 +                    }
 +                }
++                
++                /*No longer prefix exist in level 24*/
 +            }
 +		/*All the leafs in level 1~16 will be stored in level 16.*/
 +		num_leafs = 1U << (16 - prefix_len);
@@ -869,7 +871,7 @@ index 0000000..e4e6681
 +	/*Extract bit 17~24 and calculate index to level 24*/
 +	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
 +	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;
++	ck24_off = (key & 65280) >> 8;       
 +
 +	if (prefix_len <= 24) {
 +		/*All the leafs in level 17~24 will be stored in level 24.*/
@@ -881,8 +883,24 @@ index 0000000..e4e6681
 +			s->N24[n24_idx + i] = netdev_index;
 +			s->P24[n24_idx + i] = prefix_len;
 +		}
++                
++                /*Nothing to push from level 16*/
++                if(s->N16[n16_idx] == 0)
++                    goto finish;
++
++                /*This node in level 16 also should be pushed to level 24*/
++                int level_16_netdev_index = s->N16[n16_idx];
++                int level_16_prefix_len = s->P16[n16_idx];
++                int chunk_off = (s->C16[n16_idx] - 1) * CHUNK_SIZE;
++                int j;
++                for (j = 0; j < 256; j++) {
++                    if (level_16_prefix_len > s->P24[chunk_off + j]) {
++                        s->N24[chunk_off + j] = level_16_netdev_index;
++                        s->P24[chunk_off + j] = level_16_prefix_len;
++                    }
++                }
 +		goto finish;
-+	}
++	}       
 +
 +	/* The length of the prefix is 25~32, but there is no chunk for
 +	 * this prefix in level 32. So need to insert a new one.
