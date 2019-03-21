@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..3a3dd80
+index 0000000..8c785aa
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,1034 @@
+@@ -0,0 +1,1051 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -737,46 +737,8 @@ index 0000000..3a3dd80
 +	return 0;
 +}
 +
-+static bool from_16_to_24(struct sail *s, u16 n16_idx)
-+{
-+    bool pushed = false;
-+    bool is_push_needed = false;
-+    int n24_idx;
-+    int j;
-+
-+    if(s->C16[n16_idx] == 0)
-+        return pushed;
-+    
-+    n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE;
-+
-+    /*Longer prefix exist in level 24*/
-+    for (j = 0; j < 256; j++) {
-+        if (s->N24[n24_idx + j] > 0) {
-+            is_push_needed = true;
-+            break;
-+        }
-+    }
-+
-+    if(!is_push_needed)
-+        return pushed;
-+
-+    for (j = 0; j < 256; j++) {
-+        if (s->P16[n16_idx] > s->P24[n24_idx + j]) {
-+            s->N24[n24_idx + j] = s->N16[n16_idx];
-+            s->P24[n24_idx + j] = s->P16[n16_idx];
-+            pushed = true;
-+        }
-+    }
-+
-+    if (pushed) {
-+        s->N16[n16_idx] = 0;
-+        s->P16[n16_idx] = 0;
-+    }
-+        
-+    return pushed;
-+}
-+
-+static bool from_24_to_32(struct sail *s, u64 n24_idx, u64 c24_idx)
++/*Push nodes from level to level 32*/
++static bool push_frm_24(struct sail *s, u64 n24_idx, u64 c24_idx)
 +{
 +    bool pushed = false;
 +    bool is_push_needed = false;
@@ -812,6 +774,61 @@ index 0000000..3a3dd80
 +    if (pushed) {
 +        s->N24[n24_idx] = 0;
 +        s->P24[n24_idx] = 0;
++    }
++        
++    return pushed;
++}
++
++/*Push nodes from level 16 to level 24 or level 32*/
++static bool push_frm_16(struct sail *s, u16 n16_idx)
++{
++    bool pushed = false;
++    bool is_push_needed = false;
++    int n24_idx;
++    int j;
++    u64 c24_idx;/*Index to C24*/
++    u32 ck24_idx;/*Index to CK24*/
++    u64 ck24_off;/*offset inside a chunk*/
++    u8 part_idx, part_off;
++
++    if(s->C16[n16_idx] == 0)
++        return pushed;
++    
++    n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE;
++
++    /*Longer prefix exist in level 24*/
++    for (j = 0; j < 256; j++) {
++        if (s->N24[n24_idx + j] > 0) {
++            is_push_needed = true;
++            break;
++        }
++    }
++
++    if(!is_push_needed)
++        return pushed;
++
++    for (j = 0; j < 256; j++) {
++        if (s->P16[n16_idx] > s->P24[n24_idx + j]) {
++            s->N24[n24_idx + j] = s->N16[n16_idx];
++            s->P24[n24_idx + j] = s->P16[n16_idx];
++            pushed = true;
++        }
++
++        /*After pushing it to level 24, need to check if can be pushed to level 32*/
++	ck24_idx = s->C16[n16_idx] - 1;
++	ck24_off = j;     
++	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++        
++        /*There is a chunk in level 32*/
++        if(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))
++            push_frm_24(s, n24_idx + j, c24_idx);
++    }
++
++    if (pushed) {
++        s->N16[n16_idx] = 0;
++        s->P16[n16_idx] = 0;
 +    }
 +        
 +    return pushed;
@@ -903,7 +920,7 @@ index 0000000..3a3dd80
 +				continue;
 +			s->N16[n16_idx + i] = netdev_index;
 +			s->P16[n16_idx + i] = prefix_len;
-+                        from_16_to_24(s, n16_idx + i);
++                        push_frm_16(s, n16_idx + i);
 +		}
 +		goto finish;
 +	}
@@ -951,12 +968,12 @@ index 0000000..3a3dd80
 +			s->P24[n24_idx + i] = prefix_len;
 +                        /*There is a chunk in level 32*/
 +                        if(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))
-+                            from_24_to_32(s, n24_idx + i, c24_idx);
++                            push_frm_24(s, n24_idx + i, c24_idx);
 +		}
 +                
 +                /*This node in level 16 also should be pushed to level 24*/
 +                if(s->N16[n16_idx] != 0)
-+                    from_16_to_24(s, n16_idx);
++                    push_frm_16(s, n16_idx);
 +                
 +		goto finish;
 +	}       
@@ -1002,7 +1019,7 @@ index 0000000..3a3dd80
 +                
 +                /*This node in level 24 also should be pushed to level 32*/
 +                if(s->N24[n24_idx] != 0)
-+                    from_24_to_32(s, n24_idx, c24_idx);
++                    push_frm_24(s, n24_idx, c24_idx);
 +		goto finish;
 +	}
 +
