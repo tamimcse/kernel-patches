@@ -198,10 +198,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..8c785aa
+index 0000000..d4824c4
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,1051 @@
+@@ -0,0 +1,1055 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1209,8 +1209,10 @@ index 0000000..8c785aa
 +	if (unlikely(!n16))
 +		goto finish;
 +
-+	if (likely(n16[n16_idx] != 0))
++	if (likely(n16[n16_idx] != 0)){
 +		netdev_index = n16[n16_idx];
++                goto finish;
++        }
 +
 +	/*Check if there is a longer prefix; if yes, extract bit 17~24
 +	 *  and calculate index to N24
@@ -1226,8 +1228,10 @@ index 0000000..8c785aa
 +
 +	/*Find corresponding next-hop in level 24*/
 +	n24 = rcu_dereference(s->N24);
-+	if (likely(n24[n24_idx] != 0))
++	if (likely(n24[n24_idx] != 0)) {
 +		netdev_index = n24[n24_idx];
++                goto finish;
++        }
 +
 +	/*Check if there is a longer prefix; if yes, extract 8 bits
 +	 * from MSB and calculate index to N32
