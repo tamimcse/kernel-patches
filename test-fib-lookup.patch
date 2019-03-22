@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..d957eee 100644
+index 69c91d1..a9f14ba 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,7 @@
@@ -10,7 +10,7 @@ index 69c91d1..d957eee 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -259,26 +260,419 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,26 +260,423 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -231,6 +231,10 @@ index 69c91d1..d957eee 100644
 +		"78.33.42.0",
 +		"78.33.10.1",
 +		"8.3.16.0",
++		"45.4.71.0",
++		"45.4.71.2",
++		"23.111.134.1",
++		"17.1.148.1",
 +		/*
 +		 *"169.254.221.211",
 +		 *"169.254.231.253",
@@ -258,7 +262,7 @@ index 69c91d1..d957eee 100644
 +            temp = flp->daddr;
 +            flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
 +            
-+            for (j = 0; j < 94; j++) {            
++            for (j = 0; j < 98; j++) {            
 +                ip_addr = in_aton(wtf[j]);
 +                sail_lookup(&tb->sail, ip_addr, &dev);
 +		flp->daddr = ip_addr;		
