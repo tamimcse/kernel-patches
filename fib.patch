@@ -28,10 +28,10 @@ index 36f9f41..5c191a4 100644
  
 diff --git a/samples/bpf/fib_kern.c b/samples/bpf/fib_kern.c
 new file mode 100644
-index 0000000..1977673
+index 0000000..cfd983f
 --- /dev/null
 +++ b/samples/bpf/fib_kern.c
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,273 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -191,6 +191,64 @@ index 0000000..1977673
 +	.max_entries	= 1,
 +};
 +
++/*POPCNT of left-most N bits of X*/
++#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
++
++/*chunk size is 2^8*/
++#define CHUNK_SIZE 256
++
++static int sail_lookup(const struct sail *s, const __be32 dest)
++{
++	const u32 key = ntohl(dest);
++	u16 n16_idx;/*Index to N16 and C16*/
++	u64 n24_idx;/*Index to N24*/
++	u32 ck24_idx;/*Index to CK24*/
++	u64 ck24_off;/*Offset inside a chunk*/
++	u64 c24_idx;/*Index to C24*/
++	u64 n32_idx;/*Index to N32*/
++	u8 part_idx, part_off;
++
++	/*extract 16 bits from LSB*/
++	n16_idx = key >> 16;
++	if (unlikely(!s->N16))
++		return s->def_nh;
++
++	if (likely(s->N16[n16_idx] != 0))
++		return s->N16[n16_idx];
++
++	/*Check if there is a longer prefix; if yes, extract bit 17~24
++	 *  and calculate index to N24
++	 */
++	if (likely(s->C16[n16_idx] != 0)) {
++		ck24_idx = s->C16[n16_idx] - 1;
++		ck24_off = (key & 65280) >> 8;
++		n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
++	} else {
++		return s->def_nh;
++	}
++
++	/*Find corresponding next-hop in level 24*/
++	if (likely(s->N24[n24_idx] != 0))
++		return s->N24[n24_idx];
++
++	/*Check if there is a longer prefix; if yes, extract 8 bits
++	 * from MSB and calculate index to N32
++	 */
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++	if (likely(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
++		c24_idx = s->CK24[ck24_idx].start_index[part_idx] +
++			POPCNT_OFF(s->CK24[ck24_idx].bitmap[part_idx], part_off);
++		n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++	} else {
++		return s->def_nh;
++	}
++
++	if (likely(s->N32[n32_idx] != 0))
++		return s->N32[n32_idx];
++        
++        return s->def_nh;
++}
 +
 +/*
 + * sudo ./bpftool prog show
@@ -222,6 +280,8 @@ index 0000000..1977673
 +    s = bpf_map_lookup_elem(&sail_map, &key);
 +    if (!s)
 +            return XDP_ABORTED;
++    
++    sail_lookup(s, ph->daddr);
 +    
 +    states = bpf_map_lookup_elem(&states_map, &key);
 +    if (!states)
