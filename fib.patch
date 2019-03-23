@@ -1,0 +1,545 @@
+diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
+index 36f9f41..5c191a4 100644
+--- a/samples/bpf/Makefile
++++ b/samples/bpf/Makefile
+@@ -51,6 +51,7 @@ hostprogs-y += cpustat
+ hostprogs-y += xdp_adjust_tail
+ hostprogs-y += xdpsock
+ hostprogs-y += xdp_fwd
++hostprogs-y += fib
+ hostprogs-y += task_fd_query
+ hostprogs-y += xdp_sample_pkts
+ 
+@@ -107,6 +108,7 @@ cpustat-objs := bpf_load.o cpustat_user.o
+ xdp_adjust_tail-objs := xdp_adjust_tail_user.o
+ xdpsock-objs := xdpsock_user.o
+ xdp_fwd-objs := xdp_fwd_user.o
++fib-objs := fib_user.o
+ task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
+ xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
+ 
+@@ -164,6 +166,7 @@ always += cpustat_kern.o
+ always += xdp_adjust_tail_kern.o
+ always += xdpsock_kern.o
+ always += xdp_fwd_kern.o
++always += fib_kern.o
+ always += task_fd_query_kern.o
+ always += xdp_sample_pkts_kern.o
+ 
+diff --git a/samples/bpf/fib_kern.c b/samples/bpf/fib_kern.c
+new file mode 100644
+index 0000000..1977673
+--- /dev/null
++++ b/samples/bpf/fib_kern.c
+@@ -0,0 +1,213 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ */
++#define KBUILD_MODNAME "foo"
++#include <uapi/linux/bpf.h>
++#include <linux/in.h>
++#include <linux/if_ether.h>
++#include <linux/if_packet.h>
++#include <linux/if_vlan.h>
++#include <linux/ip.h>
++#include <linux/ipv6.h>
++
++#include "bpf_helpers.h"
++
++#define bpf_printk(fmt, ...)					\
++({								\
++	       char ____fmt[] = fmt;				\
++	       bpf_trace_printk(____fmt, sizeof(____fmt),	\
++				##__VA_ARGS__);			\
++})
++
++struct pkthdr {
++        /*Ethernet header starts here. */
++	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
++	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
++	__be16		h_proto;		/* packet type ID field	*/
++        
++        /*IP header starts here. */
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	__u8	ihl:4,
++		version:4;
++#elif defined (__BIG_ENDIAN_BITFIELD)
++	__u8	version:4,
++  		ihl:4;
++#else
++#error	"Please fix <asm/byteorder.h>"
++#endif
++	__u8	tos;
++	__be16	tot_len;
++	__be16	id;
++	__be16	frag_off;
++	__u8	ttl;
++	__u8	protocol;
++	__sum16	check_ip;
++	__be32	saddr;
++	__be32	daddr;
++	/*The IP header options start here. */
++        /*TCP header starts here. */        
++	__be16	source;
++	__be16	dest;
++	__be32	seq;
++	__be32	ack_seq;
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	__u16	res1:4,
++		doff:4,
++		fin:1,
++		syn:1,
++		rst:1,
++		psh:1,
++		ack:1,
++		urg:1,
++		ece:1,
++		cwr:1;
++#elif defined(__BIG_ENDIAN_BITFIELD)
++	__u16	doff:4,
++		res1:4,
++		cwr:1,
++		ece:1,
++		urg:1,
++		ack:1,
++		psh:1,
++		rst:1,
++		syn:1,
++		fin:1;
++#else
++#error	"Adjust your <asm/byteorder.h> defines"
++#endif	
++	__be16	window;
++	__sum16	check_tcp;
++	__be16	urg_ptr;
++	/*The TCP header options start here. */
++        __u32 tcp_op1;
++        __u16 tcp_op2;
++        /*TCP MF option header starts here. */
++        __u8	mf_op_len;
++        __u8 mf_op_req_thput;           /* Required throughput in MF */ 
++        __u8 mf_op_cur_thput;           /* Current throughput in MF */
++        __u8 mf_op_feedback_thput;      /* Feedback throughput in MF */
++        __u8 mf_op_prop_delay_est;
++};
++
++struct per_port_states {
++    /*Number of bytes sent*/    
++    __u64 B;
++    __u64 Q;
++    /*Number of packets received during the control interval*/
++    __u64 n;
++    /*Feedback rate of this router*/
++    __u64 R;
++    __u32 rtt_tot, rtt_a;
++};
++
++struct chunk {
++	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
++	u64 bitmap[4];
++	/*
++	 * Index to C24 where chunk is started. A chunk corresponds
++	 * to 256 elements. Instead of having just one start index for the
++	 * whole chunk, we divide the chunk into 4 parts and save start
++	 * index for each part.
++	 */
++	u64 start_index[4];
++};
++
++struct sail {
++	/*default next-hop (Level 0)*/
++	u8	def_nh;
++
++	/*Level 16*/
++	u8 *N16;
++	u8 *P16;
++	u16 *C16;
++
++	/*Level 24*/
++	u8 *N24;
++	u8 *P24;
++	struct chunk *CK24;
++	u32 *C24;
++	u32 cnk24_count;/*Number of chunks in level 24*/
++
++	/*Level 32*/
++	u8 *N32;
++	u8 *P32;
++	u32 cnk32_count;/*Number of chunks in level 32*/
++};
++
++struct bpf_map_def SEC("maps") states_map = {
++	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
++	.key_size	= sizeof(__u32),
++	.value_size	= sizeof(struct per_port_states),
++	.max_entries	= 1,
++};
++
++struct bpf_map_def SEC("maps") sail_map = {
++	.type		= BPF_MAP_TYPE_ARRAY,
++	.key_size	= sizeof(__u32),
++	.value_size	= sizeof(struct sail),
++	.max_entries	= 1,
++};
++
++
++/*
++ * sudo ./bpftool prog show
++ * sudo ./bpftool prog dump xlated id 4
++ * sudo ./bpftool prog dump jited id 4
++ */
++
++SEC("fib_lookup")
++int xcp_router_prog(struct xdp_md *ctx)
++{
++    void *data_end = (void *)(long)ctx->data_end;
++    void *data = (void *)(long)ctx->data;
++    int len = data_end - data;
++    struct pkthdr *ph = data;
++    struct per_port_states *states;
++    struct sail *s;
++    __u32 key = 0;
++    __u64 Q;
++    
++    if (data + 67 > data_end)
++            return XDP_DROP;
++    
++    if (unlikely(ph->version != 4))
++        return XDP_DROP;
++
++    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */
++    bpf_printk("Hello world %d \n", len);/* DEBUG ONLY */
++
++    s = bpf_map_lookup_elem(&sail_map, &key);
++    if (!s)
++            return XDP_ABORTED;
++    
++    states = bpf_map_lookup_elem(&states_map, &key);
++    if (!states)
++            return XDP_ABORTED;
++    states->n++;
++    states->B += len;
++    Q = 100;
++    if(states->Q > Q)
++        states->Q = Q;
++    
++    states->rtt_tot += ph->mf_op_prop_delay_est;
++    if(ph->mf_op_feedback_thput > states->R){
++//        ph->mf_op_feedback_thput = states->R;
++        bpf_printk("Setting RCP throughput %llu \n", states->R);
++    }
++    
++    if (bpf_map_update_elem(&states_map, &key, states, BPF_EXIST) != 0)
++            return XDP_ABORTED;
++        
++    return XDP_PASS;
++}
++
++char _license[] SEC("license") = "GPL";
+diff --git a/samples/bpf/fib_user.c b/samples/bpf/fib_user.c
+new file mode 100644
+index 0000000..63f3f34
+--- /dev/null
++++ b/samples/bpf/fib_user.c
+@@ -0,0 +1,292 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ */
++
++#include <linux/bpf.h>
++#include <linux/if_link.h>
++#include <linux/limits.h>
++#include <net/if.h>
++#include <errno.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <stdbool.h>
++#include <string.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <libgen.h>
++
++#include "bpf/libbpf.h"
++#include <bpf/bpf.h>
++
++#include <unistd.h>
++#include <signal.h>
++
++#include "bpf_util.h"
++
++#define C 40*1024*1024*1024
++#define ALPHA .4
++#define BETA .6
++#define Q_MAX 20000
++#define R_INIT 10 * 1024 * 1024
++#define RTT_A_INIT 200
++#define NUM_PORTS 64
++
++
++struct per_port_states {
++    /*Number of bytes sent*/    
++    __u64 B;
++    __u64 Q;
++    /*Number of packets received during the control interval*/
++    __u64 n;
++    /*Feedback rate of this router*/
++    __u64 R;
++    __u32 rtt_tot, rtt_a;
++};
++
++static void usage(const char *prog)
++{
++	fprintf(stderr,
++		"usage: %s [OPTS] interface-list\n"
++		"\nOPTS:\n"
++		"    -d    detach program\n"
++		"    -D    direct table lookups (skip fib rules)\n",
++		prog);
++}
++
++static int nr_cpus;
++static int map_fd, prog_fd;
++static struct bpf_object *obj;
++static int xdp_flags = XDP_FLAGS_HW_MODE;
++static int ifindex[NUM_PORTS];
++static char *netdevs[NUM_PORTS];
++static int args_count;
++
++void on_alarm(int signum);
++
++static int do_attach(int idx, int fd, const char *name)
++{
++	int err;
++
++	err = bpf_set_link_xdp_fd(idx, fd, 0);
++	if (err < 0)
++		printf("ERROR: failed to attach program to %s\n", name);
++
++	return err;
++}
++
++static int do_detach(int idx, const char *name)
++{
++	int err;
++
++	err = bpf_set_link_xdp_fd(idx, -1, 0);
++	if (err < 0)
++		printf("ERROR: failed to detach program from %s\n", name);
++
++	return err;
++}
++
++static void int_exit(int sig)
++{
++        int i, err = 0;
++//	bpf_set_link_xdp_fd(ifindex, -1, xdp_flags);
++        
++        for (i = optind; i < args_count; ++i) {
++            err = do_detach(ifindex[i], netdevs[i]);
++            if (err)
++                    printf("Error detaching the program \n");    
++        }
++        
++	exit(0);
++}
++
++static int states_init(struct per_port_states states[], int arr_size)
++{
++    int i = 0;
++    for (; i < arr_size; i++) {
++        states[i].rtt_a = RTT_A_INIT;
++        states[i].R = R_INIT;
++        states[i].rtt_tot = 0;
++        states[i].n = 0;
++        states[i].B = 0;
++        states[i].Q = Q_MAX;        
++    }
++
++    return 0;
++}
++
++static int states_reset(struct per_port_states states[], int arr_size, uint64_t R, uint32_t rtt_a)
++{
++  int i = 0;  
++  for (; i < arr_size; i++) {
++    states[i].rtt_a = rtt_a;
++    states[i].R = R;
++    states[i].rtt_tot = 0;
++    states[i].n = 0;
++    states[i].B = 0;
++    states[i].Q = Q_MAX;      
++  }  
++
++  return 0;
++}
++
++static int calc_rcp_rate(struct per_port_states states[], int arr_size)
++{
++  struct per_port_states res;
++  int i = 0;
++
++  res.Q = 2000000;
++  res.B = 0;
++  
++    for (; i < arr_size; i++) {
++      res.rtt_tot += states[i].rtt_a;
++      res.B += states[i].B;
++      res.n += states[i].n;
++      if(res.Q > states[i].Q)
++          res.Q = states[i].Q;
++    }    
++    __u64 S = states->rtt_a == 0 ? 2000 : 2000 - res.B/states[0].rtt_a;
++    res.rtt_a = states->n == 0 ? 200 : res.rtt_tot/res.n;
++    res.R = states[0].R * (1 + (ALPHA * S - BETA * res.Q/states[0].rtt_a)/C);
++    states_reset(states, arr_size, res.R, res.rtt_a);
++    
++    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu R=%llu \n", states[0].B, states[0].rtt_a, S, states[0].Q, states[0].R);	
++    return 0;
++}
++
++static int states_print(struct per_port_states states[], int arr_size) {
++  int i = 0;  
++  for (; i < arr_size; i++) {
++    printf("%d: B=%llu RTT_a=%u Q=%llu R=%llu n=%llu RTT_tot=%u \n", i, states[i].B, states[i].rtt_a, states[i].Q, states[i].R, states[i].n, states[i].rtt_tot);
++  }  
++
++  return 0;
++}
++
++
++void on_alarm(int signum)
++{
++    struct bpf_map *map;
++    struct per_port_states allstates[nr_cpus];
++    __u32 key = 0;
++    
++    printf("In on_alarm()\n");
++    
++    if (bpf_map_lookup_elem(map_fd, &key, allstates) < 0)
++            return;
++       
++    calc_rcp_rate(allstates, nr_cpus);    
++    
++    if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
++            printf("states_map map update failed: %s\n", strerror(map_fd));
++            return;
++    }
++    
++    ualarm(allstates[0].rtt_a * 1000, 0);  // Reschedule alarm
++}
++
++int main(int argc, char **argv)
++{
++	struct bpf_prog_load_attr prog_load_attr = {
++		.prog_type	= BPF_PROG_TYPE_XDP,
++	};
++	struct bpf_program *prog;
++	char filename[PATH_MAX];
++
++	int attach = 1;
++	int ret = 0;
++        struct bpf_map *map;
++        struct per_port_states allstates[nr_cpus];
++        int opt, i, err;
++        __u32 key = 0;
++        
++	nr_cpus = bpf_num_possible_cpus();
++	printf("nr_cpus:%d\n\n", nr_cpus);
++
++	while ((opt = getopt(argc, argv, ":dD")) != -1) {
++		switch (opt) {
++		case 'd':
++			attach = 0;
++			break;
++		default:
++			usage(basename(argv[0]));
++			return 1;
++		}
++	}
++
++	if (optind == argc) {
++		usage(basename(argv[0]));
++		return 1;
++	}
++
++	if (attach) {
++		snprintf(filename, sizeof(filename), "%s_kern.o", argv[0]);
++		prog_load_attr.file = filename;
++
++		if (access(filename, O_RDONLY) < 0) {
++			printf("error accessing file %s: %s\n",
++				filename, strerror(errno));
++			return 1;
++		}
++		if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
++			return 1;
++
++		prog = bpf_object__find_program_by_title(obj, "fib_lookup");
++		prog_fd = bpf_program__fd(prog);
++		if (prog_fd < 0) {
++			printf("program not found: %s\n", strerror(prog_fd));
++			return 1;
++		}
++                
++                map = bpf_object__find_map_by_name(obj, "states_map");
++		map_fd = bpf_map__fd(map);
++		if (map_fd < 0) {
++			printf("states_map map not found: %s\n", strerror(map_fd));
++			return 1;
++		}
++                
++                states_init(allstates, nr_cpus);
++                
++                //WTF!!! : fix the hack in states_init
++                key = 0;
++                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
++                        printf("states_map map update failed: %s\n", strerror(map_fd));
++                        return XDP_ABORTED;
++                }
++                
++                signal(SIGINT, int_exit);
++                signal(SIGTERM, int_exit);
++   
++                signal( SIGALRM, on_alarm ); // Install handler first,
++                ualarm(200 * 1000, 0);  //200ms 
++	}
++
++        args_count = argc;
++	for (i = optind; i < argc; ++i) {
++            netdevs[i] = argv[i];
++            ifindex[i] = if_nametoindex(argv[i]);
++            if (!ifindex[i])
++                    ifindex[i] = strtoul(argv[i], NULL, 0);
++            if (!ifindex[i]) {
++                    fprintf(stderr, "Invalid arg\n");
++                    return 1;
++            }
++            err = do_attach(ifindex[i], prog_fd, argv[i]);
++            if (err)
++                    ret = err;
++        }
++
++        while (1) {
++            pause();
++        }       
++        
++	return ret;
++}
