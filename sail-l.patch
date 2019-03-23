@@ -198,7 +198,7 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..eec8966
+index 0000000..a22bac6
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
 @@ -0,0 +1,1059 @@
@@ -952,10 +952,7 @@ index 0000000..eec8966
 +	/*Extract bit 17~24 and calculate index to level 24*/
 +	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
 +	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;     
-+	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
-+	part_idx = ck24_off / 64;
-+	part_off = ck24_off % 64;
++	ck24_off = (key & 65280) >> 8;
 +
 +	if (prefix_len <= 24) {
 +		/*All the leafs in level 17~24 will be stored in level 24.*/
@@ -978,6 +975,8 @@ index 0000000..eec8966
 +		goto finish;
 +	}       
 +
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
 +	/* The length of the prefix is 25~32, but there is no chunk for
 +	 * this prefix in level 32. So need to insert a new one.
 +	 * The insertion works as following:
@@ -1003,6 +1002,7 @@ index 0000000..eec8966
 +			goto error;
 +	}
 +
++	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
 +	/*Extract 8 bit from MSB and calculate index to level 32*/
 +	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
 +
