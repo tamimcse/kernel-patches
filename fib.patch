@@ -28,10 +28,10 @@ index 36f9f41..5c191a4 100644
  
 diff --git a/samples/bpf/fib_kern.c b/samples/bpf/fib_kern.c
 new file mode 100644
-index 0000000..cfd983f
+index 0000000..92a24d1
 --- /dev/null
 +++ b/samples/bpf/fib_kern.c
-@@ -0,0 +1,273 @@
+@@ -0,0 +1,212 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -87,49 +87,6 @@ index 0000000..cfd983f
 +	__sum16	check_ip;
 +	__be32	saddr;
 +	__be32	daddr;
-+	/*The IP header options start here. */
-+        /*TCP header starts here. */        
-+	__be16	source;
-+	__be16	dest;
-+	__be32	seq;
-+	__be32	ack_seq;
-+#if defined(__LITTLE_ENDIAN_BITFIELD)
-+	__u16	res1:4,
-+		doff:4,
-+		fin:1,
-+		syn:1,
-+		rst:1,
-+		psh:1,
-+		ack:1,
-+		urg:1,
-+		ece:1,
-+		cwr:1;
-+#elif defined(__BIG_ENDIAN_BITFIELD)
-+	__u16	doff:4,
-+		res1:4,
-+		cwr:1,
-+		ece:1,
-+		urg:1,
-+		ack:1,
-+		psh:1,
-+		rst:1,
-+		syn:1,
-+		fin:1;
-+#else
-+#error	"Adjust your <asm/byteorder.h> defines"
-+#endif	
-+	__be16	window;
-+	__sum16	check_tcp;
-+	__be16	urg_ptr;
-+	/*The TCP header options start here. */
-+        __u32 tcp_op1;
-+        __u16 tcp_op2;
-+        /*TCP MF option header starts here. */
-+        __u8	mf_op_len;
-+        __u8 mf_op_req_thput;           /* Required throughput in MF */ 
-+        __u8 mf_op_cur_thput;           /* Current throughput in MF */
-+        __u8 mf_op_feedback_thput;      /* Feedback throughput in MF */
-+        __u8 mf_op_prop_delay_est;
 +};
 +
 +struct per_port_states {
@@ -263,10 +220,10 @@ index 0000000..cfd983f
 +    void *data = (void *)(long)ctx->data;
 +    int len = data_end - data;
 +    struct pkthdr *ph = data;
-+    struct per_port_states *states;
 +    struct sail *s;
 +    __u32 key = 0;
-+    __u64 Q;
++    int ifindex;
++    
 +    
 +    if (data + 67 > data_end)
 +            return XDP_DROP;
@@ -282,25 +239,7 @@ index 0000000..cfd983f
 +            return XDP_ABORTED;
 +    
 +    sail_lookup(s, ph->daddr);
-+    
-+    states = bpf_map_lookup_elem(&states_map, &key);
-+    if (!states)
-+            return XDP_ABORTED;
-+    states->n++;
-+    states->B += len;
-+    Q = 100;
-+    if(states->Q > Q)
-+        states->Q = Q;
-+    
-+    states->rtt_tot += ph->mf_op_prop_delay_est;
-+    if(ph->mf_op_feedback_thput > states->R){
-+//        ph->mf_op_feedback_thput = states->R;
-+        bpf_printk("Setting RCP throughput %llu \n", states->R);
-+    }
-+    
-+    if (bpf_map_update_elem(&states_map, &key, states, BPF_EXIST) != 0)
-+            return XDP_ABORTED;
-+        
++   
 +    return XDP_PASS;
 +}
 +
