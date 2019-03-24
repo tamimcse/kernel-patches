@@ -277,10 +277,10 @@ index 0000000..003b953
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..458714c
+index 0000000..3ebedd2
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1224 @@
+@@ -0,0 +1,1221 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1449,6 +1449,15 @@ index 0000000..458714c
 +			return 1;
 +		}
 +                
++                states_init(allstates, nr_cpus);
++                
++                //WTF!!! : fix the hack in states_init
++                key = 0;
++                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
++                        printf("states_map map update failed: %s\n", strerror(map_fd));
++                        return XDP_ABORTED;
++                }
++                
 +                sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
 +                if (sail_map_fd < 0) {
 +                        printf("sail_map could not found: %s\n", strerror(map_fd));
@@ -1463,16 +1472,6 @@ index 0000000..458714c
 +                if (bpf_map_update_elem(sail_map_fd, &key, &s, BPF_ANY) != 0) {
 +                        printf("sail_map update failed: %s\n", strerror(map_fd));
 +                        return;
-+                }
-+
-+                
-+                states_init(allstates, nr_cpus);
-+                
-+                //WTF!!! : fix the hack in states_init
-+                key = 0;
-+                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
-+                        printf("states_map map update failed: %s\n", strerror(map_fd));
-+                        return XDP_ABORTED;
 +                }
 +                
 +                signal(SIGINT, int_exit);
