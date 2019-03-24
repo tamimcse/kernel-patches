@@ -1,12 +1,12 @@
 diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
-index 36f9f41..5c191a4 100644
+index 36f9f41..b069d51 100644
 --- a/samples/bpf/Makefile
 +++ b/samples/bpf/Makefile
 @@ -51,6 +51,7 @@ hostprogs-y += cpustat
  hostprogs-y += xdp_adjust_tail
  hostprogs-y += xdpsock
  hostprogs-y += xdp_fwd
-+hostprogs-y += fib
++hostprogs-y += sail
  hostprogs-y += task_fd_query
  hostprogs-y += xdp_sample_pkts
  
@@ -14,7 +14,7 @@ index 36f9f41..5c191a4 100644
  xdp_adjust_tail-objs := xdp_adjust_tail_user.o
  xdpsock-objs := xdpsock_user.o
  xdp_fwd-objs := xdp_fwd_user.o
-+fib-objs := fib_user.o
++sail-objs := sail_user.o
  task_fd_query-objs := bpf_load.o task_fd_query_user.o $(TRACE_HELPERS)
  xdp_sample_pkts-objs := xdp_sample_pkts_user.o $(TRACE_HELPERS)
  
@@ -22,15 +22,15 @@ index 36f9f41..5c191a4 100644
  always += xdp_adjust_tail_kern.o
  always += xdpsock_kern.o
  always += xdp_fwd_kern.o
-+always += fib_kern.o
++always += sail_kern.o
  always += task_fd_query_kern.o
  always += xdp_sample_pkts_kern.o
  
-diff --git a/samples/bpf/fib_kern.c b/samples/bpf/fib_kern.c
+diff --git a/samples/bpf/sail_kern.c b/samples/bpf/sail_kern.c
 new file mode 100644
-index 0000000..92a24d1
+index 0000000..31af119
 --- /dev/null
-+++ b/samples/bpf/fib_kern.c
++++ b/samples/bpf/sail_kern.c
 @@ -0,0 +1,212 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
@@ -213,7 +213,7 @@ index 0000000..92a24d1
 + * sudo ./bpftool prog dump jited id 4
 + */
 +
-+SEC("fib_lookup")
++SEC("sail_lookup")
 +int xcp_router_prog(struct xdp_md *ctx)
 +{
 +    void *data_end = (void *)(long)ctx->data_end;
@@ -244,11 +244,11 @@ index 0000000..92a24d1
 +}
 +
 +char _license[] SEC("license") = "GPL";
-diff --git a/samples/bpf/fib_user.c b/samples/bpf/fib_user.c
+diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..a68c298
+index 0000000..8672e6d
 --- /dev/null
-+++ b/samples/bpf/fib_user.c
++++ b/samples/bpf/sail_user.c
 @@ -0,0 +1,1254 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
@@ -1453,7 +1453,7 @@ index 0000000..a68c298
 +		if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
 +			return 1;
 +
-+		prog = bpf_object__find_program_by_title(obj, "fib_lookup");
++		prog = bpf_object__find_program_by_title(obj, "sail_lookup");
 +		prog_fd = bpf_program__fd(prog);
 +		if (prog_fd < 0) {
 +			printf("program not found: %s\n", strerror(prog_fd));
