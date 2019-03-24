@@ -277,10 +277,10 @@ index 0000000..003b953
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..3ebedd2
+index 0000000..40ac652
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1221 @@
+@@ -0,0 +1,1228 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1474,11 +1474,11 @@ index 0000000..3ebedd2
 +                        return;
 +                }
 +                
-+                signal(SIGINT, int_exit);
-+                signal(SIGTERM, int_exit);
-+   
-+                signal( SIGALRM, on_alarm ); // Install handler first,
-+                ualarm(200 * 1000, 0);  //200ms 
++//                signal(SIGINT, int_exit);
++//                signal(SIGTERM, int_exit);
++//   
++//                signal( SIGALRM, on_alarm ); // Install handler first,
++//                ualarm(200 * 1000, 0);  //200ms 
 +	}
 +
 +        args_count = argc;
@@ -1491,14 +1491,21 @@ index 0000000..3ebedd2
 +                    fprintf(stderr, "Invalid arg\n");
 +                    return 1;
 +            }
-+            err = do_attach(ifindex[i], prog_fd, argv[i]);
-+            if (err)
-+                    ret = err;
++
++            if (!attach) {
++                    err = do_detach(ifindex[i], argv[i]);
++                    if (err)
++                            printf("Error detaching the program \n"); 
++            } else {
++                    err = do_attach(ifindex[i], prog_fd, argv[i]);
++                    if (err)
++                            ret = err;
++            }            
 +        }
 +
-+        while (1) {
-+            pause();
-+        }       
++//        while (1) {
++//            pause();
++//        }       
 +        
 +	return ret;
 +}
