@@ -277,10 +277,10 @@ index 0000000..003b953
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..de8a554
+index 0000000..dfb9700
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1203 @@
+@@ -0,0 +1,1212 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1259,6 +1259,7 @@ index 0000000..de8a554
 +
 +static int nr_cpus;
 +static int map_fd, prog_fd;
++static int sail_map_fd;
 +static struct bpf_object *obj;
 +static int xdp_flags = XDP_FLAGS_HW_MODE;
 +static int ifindex[NUM_PORTS];
@@ -1446,6 +1447,12 @@ index 0000000..de8a554
 +			printf("states_map map not found: %s\n", strerror(map_fd));
 +			return 1;
 +		}
++                
++                sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "states_map"));
++                if (sail_map_fd < 0) {
++                        printf("sail_map could not found: %s\n", strerror(map_fd));
++                        return 1;
++                }
 +                
 +                states_init(allstates, nr_cpus);
 +                
