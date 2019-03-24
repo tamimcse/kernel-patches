@@ -277,10 +277,10 @@ index 0000000..003b953
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..b0cfc29
+index 0000000..fac4b00
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1209 @@
+@@ -0,0 +1,1204 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1184,60 +1184,55 @@ index 0000000..b0cfc29
 +	return err;
 +}
 +
-+//int sail_flush(struct sail *s)
-+//{
-+//	u8 *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
-+//	u16 *c16_old;
-+//	u32 *c24_old;
-+//	struct chunk *ck24_old;
-+//
-+//	spin_lock(&s->lock);
-+//
-+//	/*Save old pointers*/
-+//	n16_old = s->N16;
-+//	p16_old = s->P16;
-+//	c16_old = s->C16;
-+//	n24_old = s->N24;
-+//	p24_old = s->P24;
-+//	c24_old = s->C24;
-+//	ck24_old = s->CK24;
-+//	n32_old = s->N32;
-+//	p32_old = s->P32;
-+//
-+//	/*Set the counter before the chunk are deleted*/
-+//	s->cnk32_count = 0;
-+//	s->cnk24_count = 0;
-+//
-+//	/*Set the pointers to NULL*/
-+//	rcu_assign_pointer(s->N16, NULL);
-+//	rcu_assign_pointer(s->P16, NULL);
-+//	rcu_assign_pointer(s->C16, NULL);
-+//
-+//	rcu_assign_pointer(s->N24, NULL);
-+//	rcu_assign_pointer(s->P24, NULL);
-+//	rcu_assign_pointer(s->C24, NULL);
-+//	rcu_assign_pointer(s->CK24, NULL);
-+//
-+//	rcu_assign_pointer(s->N32, NULL);
-+//	rcu_assign_pointer(s->P32, NULL);
-+//
-+//	/* Wait for all references to be released */
-+//	synchronize_rcu();
-+//
-+//	/* Deallocate old references after setting them NULL*/
-+//	kfree(n16_old);
-+//	kfree(p16_old);
-+//	kfree(c16_old);
-+//	kfree(n24_old);
-+//	kfree(p24_old);
-+//	kfree(c24_old);
-+//	kfree(ck24_old);
-+//	kfree(n32_old);
-+//	kfree(p32_old);
-+//
-+//	spin_unlock(&s->lock);
-+//	return 0;
-+//}
++/*Hold a spin lock before calling this function*/
++static int sail_flush(struct sail *s)
++{
++	char *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
++	__u16 *c16_old;
++	__u32 *c24_old;
++	struct chunk *ck24_old;
++
++	/*Save old pointers*/
++	n16_old = s->N16;
++	p16_old = s->P16;
++	c16_old = s->C16;
++	n24_old = s->N24;
++	p24_old = s->P24;
++	c24_old = s->C24;
++	ck24_old = s->CK24;
++	n32_old = s->N32;
++	p32_old = s->P32;
++
++	/*Set the counter before the chunk are deleted*/
++	s->cnk32_count = 0;
++	s->cnk24_count = 0;
++
++	/*Set the pointers to NULL*/
++	s->N16 = NULL;
++	s->P16 = NULL;
++	s->C16 = NULL;
++
++	s->N24 = NULL;
++	s->P24 = NULL;
++	s->C24 = NULL;
++	s->CK24 = NULL;
++
++	s->N32 = NULL;
++	s->P32 = NULL;
++
++	/* Deallocate old references after setting them NULL*/
++	free(n16_old);
++	free(p16_old);
++	free(c16_old);
++	free(n24_old);
++	free(p24_old);
++	free(c24_old);
++	free(ck24_old);
++	free(n32_old);
++	free(p32_old);
++
++	return 0;
++}
 +
 +
 +
