@@ -277,10 +277,10 @@ index 0000000..003b953
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..fac4b00
+index 0000000..de8a554
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1204 @@
+@@ -0,0 +1,1203 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1292,7 +1292,6 @@ index 0000000..fac4b00
 +static void int_exit(int sig)
 +{
 +        int i, err = 0;
-+//	bpf_set_link_xdp_fd(ifindex, -1, xdp_flags);
 +        
 +        for (i = optind; i < args_count; ++i) {
 +            err = do_detach(ifindex[i], netdevs[i]);
