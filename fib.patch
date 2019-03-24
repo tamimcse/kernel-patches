@@ -277,10 +277,10 @@ index 0000000..003b953
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..40ac652
+index 0000000..6670169
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1228 @@
+@@ -0,0 +1,1115 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1266,8 +1266,6 @@ index 0000000..40ac652
 +static char *netdevs[NUM_PORTS];
 +static int args_count;
 +
-+void on_alarm(int signum);
-+
 +static int do_attach(int idx, int fd, const char *name)
 +{
 +	int err;
@@ -1301,91 +1299,6 @@ index 0000000..40ac652
 +        }
 +        
 +	exit(0);
-+}
-+
-+static int states_init(struct per_port_states states[], int arr_size)
-+{
-+    int i = 0;
-+    for (; i < arr_size; i++) {
-+        states[i].rtt_a = RTT_A_INIT;
-+        states[i].R = R_INIT;
-+        states[i].rtt_tot = 0;
-+        states[i].n = 0;
-+        states[i].B = 0;
-+        states[i].Q = Q_MAX;        
-+    }
-+
-+    return 0;
-+}
-+
-+static int states_reset(struct per_port_states states[], int arr_size, uint64_t R, uint32_t rtt_a)
-+{
-+  int i = 0;  
-+  for (; i < arr_size; i++) {
-+    states[i].rtt_a = rtt_a;
-+    states[i].R = R;
-+    states[i].rtt_tot = 0;
-+    states[i].n = 0;
-+    states[i].B = 0;
-+    states[i].Q = Q_MAX;      
-+  }  
-+
-+  return 0;
-+}
-+
-+static int calc_rcp_rate(struct per_port_states states[], int arr_size)
-+{
-+  struct per_port_states res;
-+  int i = 0;
-+
-+  res.Q = 2000000;
-+  res.B = 0;
-+  
-+    for (; i < arr_size; i++) {
-+      res.rtt_tot += states[i].rtt_a;
-+      res.B += states[i].B;
-+      res.n += states[i].n;
-+      if(res.Q > states[i].Q)
-+          res.Q = states[i].Q;
-+    }    
-+    __u64 S = states->rtt_a == 0 ? 2000 : 2000 - res.B/states[0].rtt_a;
-+    res.rtt_a = states->n == 0 ? 200 : res.rtt_tot/res.n;
-+    res.R = states[0].R * (1 + (ALPHA * S - BETA * res.Q/states[0].rtt_a)/C);
-+    states_reset(states, arr_size, res.R, res.rtt_a);
-+    
-+    printf("In calc_rcp_rate. B=%llu RTT_a=%u S=%llu Q=%llu R=%llu \n", states[0].B, states[0].rtt_a, S, states[0].Q, states[0].R);	
-+    return 0;
-+}
-+
-+static int states_print(struct per_port_states states[], int arr_size) {
-+  int i = 0;  
-+  for (; i < arr_size; i++) {
-+    printf("%d: B=%llu RTT_a=%u Q=%llu R=%llu n=%llu RTT_tot=%u \n", i, states[i].B, states[i].rtt_a, states[i].Q, states[i].R, states[i].n, states[i].rtt_tot);
-+  }  
-+
-+  return 0;
-+}
-+
-+
-+void on_alarm(int signum)
-+{
-+    struct bpf_map *map;
-+    struct per_port_states allstates[nr_cpus];
-+    __u32 key = 0;
-+    
-+    printf("In on_alarm()\n");
-+    
-+    if (bpf_map_lookup_elem(map_fd, &key, allstates) < 0)
-+            return;
-+       
-+    calc_rcp_rate(allstates, nr_cpus);    
-+    
-+    if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
-+            printf("states_map map update failed: %s\n", strerror(map_fd));
-+            return;
-+    }
-+    
-+    ualarm(allstates[0].rtt_a * 1000, 0);  // Reschedule alarm
 +}
 +
 +int main(int argc, char **argv)
@@ -1442,22 +1355,6 @@ index 0000000..40ac652
 +			return 1;
 +		}
 +                
-+                map = bpf_object__find_map_by_name(obj, "states_map");
-+		map_fd = bpf_map__fd(map);
-+		if (map_fd < 0) {
-+			printf("states_map map not found: %s\n", strerror(map_fd));
-+			return 1;
-+		}
-+                
-+                states_init(allstates, nr_cpus);
-+                
-+                //WTF!!! : fix the hack in states_init
-+                key = 0;
-+                if (bpf_map_update_elem(map_fd, &key, allstates, BPF_ANY) != 0) {
-+                        printf("states_map map update failed: %s\n", strerror(map_fd));
-+                        return XDP_ABORTED;
-+                }
-+                
 +                sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
 +                if (sail_map_fd < 0) {
 +                        printf("sail_map could not found: %s\n", strerror(map_fd));
@@ -1473,12 +1370,6 @@ index 0000000..40ac652
 +                        printf("sail_map update failed: %s\n", strerror(map_fd));
 +                        return;
 +                }
-+                
-+//                signal(SIGINT, int_exit);
-+//                signal(SIGTERM, int_exit);
-+//   
-+//                signal( SIGALRM, on_alarm ); // Install handler first,
-+//                ualarm(200 * 1000, 0);  //200ms 
 +	}
 +
 +        args_count = argc;
@@ -1503,9 +1394,5 @@ index 0000000..40ac652
 +            }            
 +        }
 +
-+//        while (1) {
-+//            pause();
-+//        }       
-+        
 +	return ret;
 +}
