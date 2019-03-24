@@ -26,12 +26,82 @@ index 36f9f41..b069d51 100644
  always += task_fd_query_kern.o
  always += xdp_sample_pkts_kern.o
  
+diff --git a/samples/bpf/sail.h b/samples/bpf/sail.h
+new file mode 100644
+index 0000000..893da97
+--- /dev/null
++++ b/samples/bpf/sail.h
+@@ -0,0 +1,64 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ */
++
++/*The length of N16, P16 and C16 is 2^16*/
++#define LEVEL16_SIZE 65536
++
++/*Length of C24.*/
++#define C24_SIZE 1048576
++
++/*chunk size is 2^8*/
++#define CHUNK_SIZE 256
++
++/*Total number of chunks preallocated for level 24 and 32*/
++#define NUM_CHUNKS 16384
++
++/*Calculates the number of bits set to 1*/
++#define POPCNT(X) (hweight64(X))
++
++/*POPCNT of left-most N bits of X*/
++#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
++
++struct chunk {
++	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
++	__u64 bitmap[4];
++	/*
++	 * Index to C24 where chunk is started. A chunk corresponds
++	 * to 256 elements. Instead of having just one start index for the
++	 * whole chunk, we divide the chunk into 4 parts and save start
++	 * index for each part.
++	 */
++	__u64 start_index[4];
++};
++
++struct sail {
++	/*default next-hop (Level 0)*/
++	char	def_nh;
++
++	/*Level 16*/
++	char *N16;
++	char *P16;
++	__u16 *C16;
++
++	/*Level 24*/
++	char *N24;
++	char *P24;
++	struct chunk *CK24;
++	__u32 *C24;
++	__u32 cnk24_count;/*Number of chunks in level 24*/
++
++	/*Level 32*/
++	char *N32;
++	char *P32;
++	__u32 cnk32_count;/*Number of chunks in level 32*/
++};
 diff --git a/samples/bpf/sail_kern.c b/samples/bpf/sail_kern.c
 new file mode 100644
-index 0000000..31af119
+index 0000000..003b953
 --- /dev/null
 +++ b/samples/bpf/sail_kern.c
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,173 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -54,6 +124,7 @@ index 0000000..31af119
 +#include <linux/ipv6.h>
 +
 +#include "bpf_helpers.h"
++#include "sail.h"
 +
 +#define bpf_printk(fmt, ...)					\
 +({								\
@@ -100,40 +171,6 @@ index 0000000..31af119
 +    __u32 rtt_tot, rtt_a;
 +};
 +
-+struct chunk {
-+	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
-+	u64 bitmap[4];
-+	/*
-+	 * Index to C24 where chunk is started. A chunk corresponds
-+	 * to 256 elements. Instead of having just one start index for the
-+	 * whole chunk, we divide the chunk into 4 parts and save start
-+	 * index for each part.
-+	 */
-+	u64 start_index[4];
-+};
-+
-+struct sail {
-+	/*default next-hop (Level 0)*/
-+	u8	def_nh;
-+
-+	/*Level 16*/
-+	u8 *N16;
-+	u8 *P16;
-+	u16 *C16;
-+
-+	/*Level 24*/
-+	u8 *N24;
-+	u8 *P24;
-+	struct chunk *CK24;
-+	u32 *C24;
-+	u32 cnk24_count;/*Number of chunks in level 24*/
-+
-+	/*Level 32*/
-+	u8 *N32;
-+	u8 *P32;
-+	u32 cnk32_count;/*Number of chunks in level 32*/
-+};
-+
 +struct bpf_map_def SEC("maps") states_map = {
 +	.type		= BPF_MAP_TYPE_PERCPU_ARRAY,
 +	.key_size	= sizeof(__u32),
@@ -147,12 +184,6 @@ index 0000000..31af119
 +	.value_size	= sizeof(struct sail),
 +	.max_entries	= 1,
 +};
-+
-+/*POPCNT of left-most N bits of X*/
-+#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
-+
-+/*chunk size is 2^8*/
-+#define CHUNK_SIZE 256
 +
 +static int sail_lookup(const struct sail *s, const __be32 dest)
 +{
@@ -246,10 +277,10 @@ index 0000000..31af119
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..8672e6d
+index 0000000..dce819e
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1254 @@
+@@ -0,0 +1,1202 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -283,6 +314,7 @@ index 0000000..8672e6d
 +#include <signal.h>
 +
 +#include "bpf_util.h"
++#include "sail.h"
 +
 +#define C 40*1024*1024*1024
 +#define ALPHA .4
@@ -291,59 +323,6 @@ index 0000000..8672e6d
 +#define R_INIT 10 * 1024 * 1024
 +#define RTT_A_INIT 200
 +#define NUM_PORTS 64
-+
-+
-+/*The length of N16, P16 and C16 is 2^16*/
-+#define LEVEL16_SIZE 65536
-+
-+/*Length of C24.*/
-+#define C24_SIZE 1048576
-+
-+/*chunk size is 2^8*/
-+#define CHUNK_SIZE 256
-+
-+/*Total number of chunks preallocated for level 24 and 32*/
-+#define NUM_CHUNKS 16384
-+
-+/*Calculates the number of bits set to 1*/
-+#define POPCNT(X) (hweight64(X))
-+
-+/*POPCNT of left-most N bits of X*/
-+#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
-+
-+struct chunk {
-+	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
-+	__u64 bitmap[4];
-+	/*
-+	 * Index to C24 where chunk is started. A chunk corresponds
-+	 * to 256 elements. Instead of having just one start index for the
-+	 * whole chunk, we divide the chunk into 4 parts and save start
-+	 * index for each part.
-+	 */
-+	__u64 start_index[4];
-+};
-+
-+struct sail {
-+	/*default next-hop (Level 0)*/
-+	char	def_nh;
-+
-+	/*Level 16*/
-+	char *N16;
-+	char *P16;
-+	__u16 *C16;
-+
-+	/*Level 24*/
-+	char *N24;
-+	char *P24;
-+	struct chunk *CK24;
-+	__u32 *C24;
-+	__u32 cnk24_count;/*Number of chunks in level 24*/
-+
-+	/*Level 32*/
-+	char *N32;
-+	char *P32;
-+	__u32 cnk32_count;/*Number of chunks in level 32*/
-+};
 +
 +/* Insert a new chunk to N24 and P24 at index chunk_id-1*/
 +static int N24_insert(struct sail *s, __u16 chunk_id)
