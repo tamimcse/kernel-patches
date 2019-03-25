@@ -28,10 +28,10 @@ index 36f9f41..b069d51 100644
  
 diff --git a/samples/bpf/sail.h b/samples/bpf/sail.h
 new file mode 100644
-index 0000000..893da97
+index 0000000..d4b9ae9
 --- /dev/null
 +++ b/samples/bpf/sail.h
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,58 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -56,12 +56,6 @@ index 0000000..893da97
 +
 +/*Total number of chunks preallocated for level 24 and 32*/
 +#define NUM_CHUNKS 16384
-+
-+/*Calculates the number of bits set to 1*/
-+#define POPCNT(X) (hweight64(X))
-+
-+/*POPCNT of left-most N bits of X*/
-+#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +struct chunk {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
@@ -98,10 +92,10 @@ index 0000000..893da97
 +};
 diff --git a/samples/bpf/sail_kern.c b/samples/bpf/sail_kern.c
 new file mode 100644
-index 0000000..003b953
+index 0000000..3bace2b
 --- /dev/null
 +++ b/samples/bpf/sail_kern.c
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,179 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -132,6 +126,12 @@ index 0000000..003b953
 +	       bpf_trace_printk(____fmt, sizeof(____fmt),	\
 +				##__VA_ARGS__);			\
 +})
++
++/*Calculates the number of bits set to 1*/
++#define POPCNT(X) (hweight64(X))
++
++/*POPCNT of left-most N bits of X*/
++#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +struct pkthdr {
 +        /*Ethernet header starts here. */
