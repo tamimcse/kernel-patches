@@ -277,10 +277,10 @@ index 0000000..3bace2b
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..2f388e5
+index 0000000..9fa0804
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1115 @@
+@@ -0,0 +1,1136 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1259,9 +1259,10 @@ index 0000000..2f388e5
 +
 +static int nr_cpus;
 +static int map_fd, prog_fd;
-+static int sail_map_fd;
++
 +static struct bpf_object *obj;
 +static int ifindex[NUM_PORTS];
++
 +
 +static int do_attach(int idx, int fd)
 +{
@@ -1275,7 +1276,39 @@ index 0000000..2f388e5
 +
 +int do_iproute(int argc, char **argv)
 +{
++        __u32 key = 0;
++        int sail_map_fd;
++        struct sail s;
++        
++        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
++        if (sail_map_fd < 0) {
++                printf("sail_map could not found: %s\n", strerror(map_fd));
++                return 1;
++        }
 +
++        if (bpf_map_lookup_elem(sail_map_fd, &key, &s) < 0)
++                return;
++
++	if (strcmp(*argv, "add") == 0) {
++                printf("Addding FIB \n");
++		sail_insert(&s, 45, 16, 1);
++                
++	} else if (strcmp(*argv, "delete") == 0) {
++            printf("Deleting FIB \n");
++		
++	} else if (strcmp(*argv, "flush") == 0) {
++                printf("Flushing FIB \n");
++		sail_flush(&s);
++	} else {
++            usage("sail");
++            exit(-1);
++        }
++        
++        if (bpf_map_update_elem(sail_map_fd, &key, &s, BPF_ANY) != 0) {
++                printf("sail_map update failed: %s\n", strerror(map_fd));
++                return;
++        }
++        
 +}
 +
 +int do_prog(int argc, char **argv)
@@ -1352,7 +1385,7 @@ index 0000000..2f388e5
 +        struct per_port_states allstates[nr_cpus];
 +        struct sail s;
 +        int opt, i, err;
-+        __u32 key = 0;
++
 +        
 +	nr_cpus = bpf_num_possible_cpus();
 +	printf("nr_cpus:%d\n\n", nr_cpus);
@@ -1375,21 +1408,9 @@ index 0000000..2f388e5
 +                return 1;
 +        }
 +
-+        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
-+        if (sail_map_fd < 0) {
-+                printf("sail_map could not found: %s\n", strerror(map_fd));
-+                return 1;
-+        }
 +
-+        if (bpf_map_lookup_elem(sail_map_fd, &key, &s) < 0)
-+                return;
 +
-+        sail_insert(&s, 45, 16, 1);    
 +
-+        if (bpf_map_update_elem(sail_map_fd, &key, &s, BPF_ANY) != 0) {
-+                printf("sail_map update failed: %s\n", strerror(map_fd));
-+                return;
-+        }
 +        
 +        if (argc > 1)
 +            return do_cmd(argv[1], argc-1, argv+1);
