@@ -277,10 +277,10 @@ index 0000000..3bace2b
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..9fa0804
+index 0000000..f458a6c
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1136 @@
+@@ -0,0 +1,1124 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1257,7 +1257,6 @@ index 0000000..9fa0804
 +		prog);
 +}
 +
-+static int nr_cpus;
 +static int map_fd, prog_fd;
 +
 +static struct bpf_object *obj;
@@ -1379,16 +1378,9 @@ index 0000000..9fa0804
 +	struct bpf_program *prog;
 +	char filename[PATH_MAX];
 +
-+	int attach = 1;
 +	int ret = 0;
 +        struct bpf_map *map;
-+        struct per_port_states allstates[nr_cpus];
-+        struct sail s;
 +        int opt, i, err;
-+
-+        
-+	nr_cpus = bpf_num_possible_cpus();
-+	printf("nr_cpus:%d\n\n", nr_cpus);
 +        
 +        snprintf(filename, sizeof(filename), "%s_kern.o", argv[0]);
 +        prog_load_attr.file = filename;
@@ -1408,10 +1400,6 @@ index 0000000..9fa0804
 +                return 1;
 +        }
 +
-+
-+
-+
-+        
 +        if (argc > 1)
 +            return do_cmd(argv[1], argc-1, argv+1);
 +
