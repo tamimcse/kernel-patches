@@ -259,10 +259,10 @@ index 0000000..c09bac5
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..00fa3e2
+index 0000000..3ee9f54
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1111 @@
+@@ -0,0 +1,1119 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1258,25 +1258,33 @@ index 0000000..00fa3e2
 +                return;
 +
 +	if (strcmp(*argv, "add") == 0) {
++                if(argc != 4)
++                    goto error;
 +                printf("Addding FIB \n");
 +		sail_insert(&s, 45, 16, 1);
 +                
 +	} else if (strcmp(*argv, "delete") == 0) {
++                if(argc != 2)
++                    goto error;
 +            printf("Deleting FIB \n");
 +		
 +	} else if (strcmp(*argv, "flush") == 0) {
++                if(argc != 1)
++                    goto error;
 +                printf("Flushing FIB \n");
 +		sail_flush(&s);
 +	} else {
-+            usage("sail");
-+            exit(-1);
++            goto error;
 +        }
 +        
 +        if (bpf_map_update_elem(sail_map_fd, &key, &s, BPF_ANY) != 0) {
 +                printf("sail_map update failed: %s\n", strerror(map_fd));
-+                return;
 +        }
++        return;
 +        
++error:        
++            usage("sail");
++            exit(-1);          
 +}
 +
 +int do_prog(int argc, char **argv)
