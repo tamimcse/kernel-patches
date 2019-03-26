@@ -259,10 +259,10 @@ index 0000000..c09bac5
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..0fdbc4b
+index 0000000..402a4e6
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1146 @@
+@@ -0,0 +1,1164 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1293,7 +1293,25 @@ index 0000000..0fdbc4b
 +	} else if (strcmp(*argv, "delete") == 0) {
 +                if(argc != 2)
 +                    goto error;
-+            printf("Deleting FIB \n");
++
++                token1 = strtok(argv[1], "/");
++                token2 = strtok(NULL, "/");
++                
++                printf("%s %s \n", token1, token2);
++
++                if (inet_aton(token1, &addr) == 0) {
++                     printf("Invalid prefix \n");
++                     goto error;
++                }
++                
++                prefix_len = atoi(token2);
++                if(!prefix_len) {
++                    printf("Invalid prefix length\n");
++                    goto error;
++                }
++                
++                printf("Deleting FIB \n");
++                sail_delete(&s, addr.s_addr, prefix_len);
 +		
 +	} else if (strcmp(*argv, "flush") == 0) {
 +                if(argc != 1)
