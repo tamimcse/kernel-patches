@@ -277,10 +277,10 @@ index 0000000..3bace2b
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..f458a6c
+index 0000000..00fa3e2
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1124 @@
+@@ -0,0 +1,1111 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1233,19 +1233,6 @@ index 0000000..f458a6c
 +
 +	return 0;
 +}
-+
-+
-+
-+struct per_port_states {
-+    /*Number of bytes sent*/    
-+    __u64 B;
-+    __u64 Q;
-+    /*Number of packets received during the control interval*/
-+    __u64 n;
-+    /*Feedback rate of this router*/
-+    __u64 R;
-+    __u32 rtt_tot, rtt_a;
-+};
 +
 +static void usage(const char *prog)
 +{
