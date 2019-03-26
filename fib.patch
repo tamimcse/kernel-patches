@@ -259,10 +259,10 @@ index 0000000..c09bac5
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..3ee9f54
+index 0000000..0fdbc4b
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1119 @@
+@@ -0,0 +1,1146 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -288,6 +288,7 @@ index 0000000..3ee9f54
 +#include <unistd.h>
 +#include <fcntl.h>
 +#include <libgen.h>
++#include <arpa/inet.h>
 +
 +#include "bpf/libbpf.h"
 +#include <bpf/bpf.h>
@@ -1247,6 +1248,12 @@ index 0000000..3ee9f54
 +        __u32 key = 0;
 +        int sail_map_fd;
 +        struct sail s;
++        char* token1;
++        char* token2;
++        char prefix_len;
++        int ifindex;
++        struct in_addr addr;
++        
 +        
 +        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
 +        if (sail_map_fd < 0) {
@@ -1260,8 +1267,28 @@ index 0000000..3ee9f54
 +	if (strcmp(*argv, "add") == 0) {
 +                if(argc != 4)
 +                    goto error;
++                
++                token1 = strtok(argv[1], "/");
++                token2 = strtok(NULL, "/");
++                
++                printf("%s %s \n", token1, token2);
++
++                if (inet_aton(token1, &addr) == 0) {
++                     printf("Invalid prefix \n");
++                     goto error;
++                }
++                
++                prefix_len = atoi(token2);
++                if(!prefix_len) {
++                    printf("Invalid prefix length\n");
++                    goto error;
++                }
++                
++                
++                ifindex = if_nametoindex(argv[3]);
++                
 +                printf("Addding FIB \n");
-+		sail_insert(&s, 45, 16, 1);
++		sail_insert(&s, addr.s_addr, prefix_len, ifindex);
 +                
 +	} else if (strcmp(*argv, "delete") == 0) {
 +                if(argc != 2)
