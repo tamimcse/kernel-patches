@@ -259,7 +259,7 @@ index 0000000..d59d3a7
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..e0ac960
+index 0000000..a98b95a
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
 @@ -0,0 +1,1172 @@
@@ -1229,6 +1229,7 @@ index 0000000..e0ac960
 +}
 +
 +static int prog_fd;
++static struct bpf_object *obj;
 +
 +static int do_attach(int idx, int fd)
 +{
@@ -1250,7 +1251,7 @@ index 0000000..e0ac960
 +        char prefix_len;
 +        int ifindex;
 +        struct in_addr addr;
-+        struct bpf_object *obj;
++
 +        
 +        
 +        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
@@ -1283,7 +1284,7 @@ index 0000000..e0ac960
 +                }
 +                
 +                
-+                ifindex = if_nametoindex(argv[3]);
++                ifindex = if_nametoindex(argv[3]);              
 +                
 +                printf("Addding FIB \n");
 +		sail_insert(&s, addr.s_addr, prefix_len, ifindex);
@@ -1410,7 +1411,6 @@ index 0000000..e0ac960
 +	int ret = 0;
 +        struct bpf_map *map;
 +        int opt, i, err;
-+        struct bpf_object *obj;
 +        
 +        snprintf(filename, sizeof(filename), "%s_kern.o", argv[0]);
 +        prog_load_attr.file = filename;
