@@ -259,10 +259,10 @@ index 0000000..d59d3a7
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..674767c
+index 0000000..e0ac960
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1173 @@
+@@ -0,0 +1,1172 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1228,11 +1228,7 @@ index 0000000..674767c
 +	exit(-1);
 +}
 +
-+static int map_fd, prog_fd;
-+
-+static struct bpf_object *obj;
-+static int ifindex[NUM_PORTS];
-+
++static int prog_fd;
 +
 +static int do_attach(int idx, int fd)
 +{
@@ -1254,11 +1250,12 @@ index 0000000..674767c
 +        char prefix_len;
 +        int ifindex;
 +        struct in_addr addr;
++        struct bpf_object *obj;
 +        
 +        
 +        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
 +        if (sail_map_fd < 0) {
-+                printf("sail_map could not found: %s\n", strerror(map_fd));
++                printf("sail_map could not found: %s\n", strerror(sail_map_fd));
 +                return 1;
 +        }
 +
@@ -1324,7 +1321,7 @@ index 0000000..674767c
 +        }
 +        
 +        if (bpf_map_update_elem(sail_map_fd, &key, &s, BPF_ANY) != 0) {
-+                printf("sail_map update failed: %s\n", strerror(map_fd));
++                printf("sail_map update failed: %s\n", strerror(sail_map_fd));
 +        }
 +        return;
 +        
@@ -1338,6 +1335,7 @@ index 0000000..674767c
 +        int i;
 +        int attach = 1;
 +        int err = 0;
++        int ifindex[NUM_PORTS];
 +
 +	if (strcmp(*argv, "attach") == 0)
 +		attach = 1;
@@ -1412,6 +1410,7 @@ index 0000000..674767c
 +	int ret = 0;
 +        struct bpf_map *map;
 +        int opt, i, err;
++        struct bpf_object *obj;
 +        
 +        snprintf(filename, sizeof(filename), "%s_kern.o", argv[0]);
 +        prog_load_attr.file = filename;
