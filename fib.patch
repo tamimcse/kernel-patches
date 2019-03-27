@@ -259,10 +259,10 @@ index 0000000..d59d3a7
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..402a4e6
+index 0000000..674767c
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1164 @@
+@@ -0,0 +1,1173 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1217,14 +1217,15 @@ index 0000000..402a4e6
 +	return 0;
 +}
 +
-+static void usage(const char *prog)
++static void usage(void)
 +{
 +	fprintf(stderr,
-+		"usage: %s [OPTS] interface-list\n"
-+		"\nOPTS:\n"
-+		"    -d    detach program\n"
-+		"    -D    direct table lookups (skip fib rules)\n",
-+		prog);
++        "Usage: sail prog  attach interface-list\n"
++        "Usage: sail prog  detach interface-list\n"
++        "Usage: sail route add prefix dev interface\n"
++        "Usage: sail route delete prefix\n"
++        "Usage: sail route flush\n");
++	exit(-1);
 +}
 +
 +static int map_fd, prog_fd;
@@ -1328,7 +1329,7 @@ index 0000000..402a4e6
 +        return;
 +        
 +error:        
-+            usage("sail");
++            usage();
 +            exit(-1);          
 +}
 +
@@ -1343,8 +1344,13 @@ index 0000000..402a4e6
 +	else if (strcmp(*argv, "detach") == 0)
 +		attach = 0;
 +	else {
-+            usage("sail");
++            usage();
 +            exit(-1);
++        }
++        
++        if (argc == 1) {
++            fprintf(stderr, "Names of the network interfaces are missing.\n");
++            goto error;
 +        }
 +        
 +	for (i = 1; i < argc; ++i) {
@@ -1352,8 +1358,8 @@ index 0000000..402a4e6
 +            if (!ifindex[i])
 +                    ifindex[i] = strtoul(argv[i], NULL, 0);
 +            if (!ifindex[i]) {
-+                    fprintf(stderr, "Invalid arg %s\n", argv[i]);
-+                    return 1;
++                    fprintf(stderr, "Invalid network interfaces %s\n", argv[i]);
++                    goto error;
 +            }
 +
 +            if (!attach) {
@@ -1367,6 +1373,9 @@ index 0000000..402a4e6
 +            }
 +        }
 +        return err;
++error:        
++            usage();
++            exit(-1);
 +}
 +
 +
