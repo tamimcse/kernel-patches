@@ -259,10 +259,10 @@ index 0000000..d59d3a7
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..a98b95a
+index 0000000..4406239
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
-@@ -0,0 +1,1172 @@
+@@ -0,0 +1,1153 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1220,16 +1220,18 @@ index 0000000..a98b95a
 +static void usage(void)
 +{
 +	fprintf(stderr,
-+        "Usage: sail prog  attach interface-list\n"
-+        "Usage: sail prog  detach interface-list\n"
-+        "Usage: sail route add prefix dev interface\n"
-+        "Usage: sail route delete prefix\n"
-+        "Usage: sail route flush\n");
++        "Usage: sail interface-list\n");
 +	exit(-1);
 +}
 +
-+static int prog_fd;
-+static struct bpf_object *obj;
++static void usage_sail(void)
++{
++	fprintf(stderr,
++        "Usage:\n"
++        "add prefix interface\n"
++        "delete prefix\n"
++        "flush\n\n");
++}
 +
 +static int do_attach(int idx, int fd)
 +{
@@ -1241,163 +1243,20 @@ index 0000000..a98b95a
 +	return bpf_set_link_xdp_fd(idx, -1, 0);
 +}
 +
-+int do_iproute(int argc, char **argv)
++static int ifindex[NUM_PORTS];
++static int args_count;
++
++static void int_exit(int sig)
 +{
-+        __u32 key = 0;
-+        int sail_map_fd;
-+        struct sail s;
-+        char* token1;
-+        char* token2;
-+        char prefix_len;
-+        int ifindex;
-+        struct in_addr addr;
-+
++        int i, err = 0;
 +        
-+        
-+        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
-+        if (sail_map_fd < 0) {
-+                printf("sail_map could not found: %s\n", strerror(sail_map_fd));
-+                return 1;
-+        }
-+
-+        if (bpf_map_lookup_elem(sail_map_fd, &key, &s) < 0)
-+                return;
-+
-+	if (strcmp(*argv, "add") == 0) {
-+                if(argc != 4)
-+                    goto error;
-+                
-+                token1 = strtok(argv[1], "/");
-+                token2 = strtok(NULL, "/");
-+                
-+                printf("%s %s \n", token1, token2);
-+
-+                if (inet_aton(token1, &addr) == 0) {
-+                     printf("Invalid prefix \n");
-+                     goto error;
-+                }
-+                
-+                prefix_len = atoi(token2);
-+                if(!prefix_len) {
-+                    printf("Invalid prefix length\n");
-+                    goto error;
-+                }
-+                
-+                
-+                ifindex = if_nametoindex(argv[3]);              
-+                
-+                printf("Addding FIB \n");
-+		sail_insert(&s, addr.s_addr, prefix_len, ifindex);
-+                
-+	} else if (strcmp(*argv, "delete") == 0) {
-+                if(argc != 2)
-+                    goto error;
-+
-+                token1 = strtok(argv[1], "/");
-+                token2 = strtok(NULL, "/");
-+                
-+                printf("%s %s \n", token1, token2);
-+
-+                if (inet_aton(token1, &addr) == 0) {
-+                     printf("Invalid prefix \n");
-+                     goto error;
-+                }
-+                
-+                prefix_len = atoi(token2);
-+                if(!prefix_len) {
-+                    printf("Invalid prefix length\n");
-+                    goto error;
-+                }
-+                
-+                printf("Deleting FIB \n");
-+                sail_delete(&s, addr.s_addr, prefix_len);
-+		
-+	} else if (strcmp(*argv, "flush") == 0) {
-+                if(argc != 1)
-+                    goto error;
-+                printf("Flushing FIB \n");
-+		sail_flush(&s);
-+	} else {
-+            goto error;
++        for (i = 1; i < args_count; ++i) {
++            err = do_detach(ifindex[i]);
++            if (err)
++                    printf("Error detaching the program \n");    
 +        }
 +        
-+        if (bpf_map_update_elem(sail_map_fd, &key, &s, BPF_ANY) != 0) {
-+                printf("sail_map update failed: %s\n", strerror(sail_map_fd));
-+        }
-+        return;
-+        
-+error:        
-+            usage();
-+            exit(-1);          
-+}
-+
-+int do_prog(int argc, char **argv)
-+{
-+        int i;
-+        int attach = 1;
-+        int err = 0;
-+        int ifindex[NUM_PORTS];
-+
-+	if (strcmp(*argv, "attach") == 0)
-+		attach = 1;
-+	else if (strcmp(*argv, "detach") == 0)
-+		attach = 0;
-+	else {
-+            usage();
-+            exit(-1);
-+        }
-+        
-+        if (argc == 1) {
-+            fprintf(stderr, "Names of the network interfaces are missing.\n");
-+            goto error;
-+        }
-+        
-+	for (i = 1; i < argc; ++i) {
-+            ifindex[i] = if_nametoindex(argv[i]);
-+            if (!ifindex[i])
-+                    ifindex[i] = strtoul(argv[i], NULL, 0);
-+            if (!ifindex[i]) {
-+                    fprintf(stderr, "Invalid network interfaces %s\n", argv[i]);
-+                    goto error;
-+            }
-+
-+            if (!attach) {
-+                    err = do_detach(ifindex[i]);
-+                    if (err)
-+                            printf("Error detaching the program \n"); 
-+            } else {
-+                    err = do_attach(ifindex[i], prog_fd);
-+                    if (err)
-+                            printf("Error attaching the program \n");
-+            }
-+        }
-+        return err;
-+error:        
-+            usage();
-+            exit(-1);
-+}
-+
-+
-+static const struct cmd {
-+	const char *cmd;
-+	int (*func)(int argc, char **argv);
-+} cmds[] = {
-+	{ "prog", 	do_prog },
-+	{ "route",	do_iproute },
-+	{ 0 }
-+};
-+
-+static int do_cmd(const char *argv0, int argc, char **argv)
-+{
-+	const struct cmd *c;
-+
-+	for (c = cmds; c->cmd; ++c) {
-+		if (strcmp(argv0, c->cmd) == 0)
-+			return c->func(argc-1, argv+1);
-+	}
-+
-+	printf("Object \"%s\" is unknown.\n", argv0);
-+	return -1;
++	printf ("Detachinhg all \n");
 +}
 +
 +int main(int argc, char **argv)
@@ -1410,8 +1269,23 @@ index 0000000..a98b95a
 +
 +	int ret = 0;
 +        struct bpf_map *map;
-+        int opt, i, err;
-+        
++        int i;
++        int err = 0;
++
++        int prog_fd;
++        struct bpf_object *obj; 
++        __u32 key = 0;
++        int sail_map_fd;
++        struct sail s;
++        char* token1;
++        char* token2;
++        char* token3;
++        char prefix_len;
++        struct in_addr addr;
++        char *tok;
++        int nh;
++        char *c;
++            
 +        snprintf(filename, sizeof(filename), "%s_kern.o", argv[0]);
 +        prog_load_attr.file = filename;
 +
@@ -1429,9 +1303,116 @@ index 0000000..a98b95a
 +                printf("program not found: %s\n", strerror(prog_fd));
 +                return 1;
 +        }
++        
++        sail_map_fd = bpf_map__fd(bpf_object__find_map_by_name(obj, "sail_map"));
++        if (sail_map_fd < 0) {
++                printf("sail_map could not found: %s\n", strerror(sail_map_fd));
++                return 1;
++        }
 +
-+        if (argc > 1)
-+            return do_cmd(argv[1], argc-1, argv+1);
++        if (bpf_map_lookup_elem(sail_map_fd, &key, &s) < 0) {
++            printf("sail_map lookup failed \n");
++            return 1;
++        }
++                
++        
++        /*Attaching all the interfaces at the beginning*/
++        args_count = argc;
++	for (i = 1; i < argc; ++i) {
++            ifindex[i] = if_nametoindex(argv[i]);
++            if (!ifindex[i])
++                    ifindex[i] = strtoul(argv[i], NULL, 0);
++            if (!ifindex[i]) {
++                    fprintf(stderr, "Invalid network interfaces %s\n", argv[i]);
++                    return 1;
++            }
 +
-+	return ret;
++            err = do_detach(ifindex[i]);
++            if (err)
++                    printf("Error detaching the program \n");
++        }
++        
++        signal(SIGTERM, int_exit);
++
++        while (1) {
++            printf("Enter ip route command (type 'exit' to exit): ");
++            char str[80];
++            fgets(str, sizeof(str), stdin);
++            /*Remove unnecessary new line at the end*/
++            if ((c = strchr(str, '\n')) != NULL) {
++                *c = '\0';
++            }
++            
++            if(strcmp(str, "exit") == 0)
++                break;
++            if(strcmp(str, "flush") == 0) {
++                printf("Flushing FIB \n");
++                sail_flush(&s);
++                continue;
++            }   
++            
++            tok = strtok(str, " ");
++            if (strcmp(tok, "add") == 0) {
++                token1 = strtok(NULL, "/");
++                token2 = strtok(NULL, " ");
++                token3 = strtok(NULL, " ");
++                if (!token1 || !token2 || !token3) {
++                    printf("Invalid command \n");
++                    goto err;
++                }
++                
++                printf("%s %s %s\n", token1, token2, token3);
++
++                if (inet_aton(token1, &addr) == 0) {
++                     printf("Invalid prefix \n");
++                    goto err;
++                }
++                
++                prefix_len = atoi(token2);
++                if (!prefix_len) {
++                    printf("Invalid prefix length\n");
++                    goto err;
++                }               
++                
++                nh = if_nametoindex(token3);
++                if (!nh) {
++                    nh = strtoul(token3, NULL, 0);
++                    if (!nh) {
++                        printf("Invalid interface\n");
++                        goto err;
++                    }
++                }
++                printf("Addding FIB \n");
++		sail_insert(&s, addr.s_addr, prefix_len, nh);
++            } else if (strcmp(tok, "delete") == 0) {
++                token1 = strtok(NULL, "/");
++                token2 = strtok(NULL, " ");
++                if (!token1 || !token2) {
++                    printf("Invalid command \n");
++                    goto err;
++                }
++                
++                if (inet_aton(token1, &addr) == 0) {
++                    printf("Invalid prefix \n");
++                    goto err;
++                }
++
++                prefix_len = atoi(token2);
++                if(!prefix_len) {
++                    printf("Invalid prefix length\n");
++                    goto err;
++                }
++
++                printf("Deleting FIB \n");
++                sail_delete(&s, addr.s_addr, prefix_len);
++            } else {
++                printf("Invalid option\n");
++                goto err;
++            }
++            continue;
++err:
++            usage_sail();            
++        }
++        
++        int_exit(0);
 +}
