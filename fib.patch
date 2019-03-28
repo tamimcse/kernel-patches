@@ -259,7 +259,7 @@ index 0000000..d59d3a7
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..a994e1b
+index 0000000..35be6de
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
 @@ -0,0 +1,1153 @@
@@ -1256,7 +1256,7 @@ index 0000000..a994e1b
 +                    printf("Error detaching the program \n");    
 +        }
 +        
-+	printf ("Detaching all \n");
++        exit(0);
 +}
 +
 +int main(int argc, char **argv)
@@ -1313,8 +1313,7 @@ index 0000000..a994e1b
 +        if (bpf_map_lookup_elem(sail_map_fd, &key, &s) < 0) {
 +            printf("sail_map lookup failed \n");
 +            return 1;
-+        }
-+                
++        }                
 +        
 +        /*Attaching all the interfaces at the beginning*/
 +        args_count = argc;
@@ -1332,6 +1331,7 @@ index 0000000..a994e1b
 +                    printf("Error detaching the program \n");
 +        }
 +        
++        signal(SIGINT, int_exit);
 +        signal(SIGTERM, int_exit);
 +
 +        while (1) {
