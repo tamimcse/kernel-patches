@@ -92,10 +92,10 @@ index 0000000..d4b9ae9
 +};
 diff --git a/samples/bpf/sail_kern.c b/samples/bpf/sail_kern.c
 new file mode 100644
-index 0000000..d59d3a7
+index 0000000..6985d9a
 --- /dev/null
 +++ b/samples/bpf/sail_kern.c
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,159 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -167,7 +167,7 @@ index 0000000..d59d3a7
 +	.max_entries	= 1,
 +};
 +
-+static char sail_lookup(const struct sail *s, const __be32 dest)
++static __always_inline char sail_lookup(const struct sail *s, const __be32 dest)
 +{
 +	const u32 key = ntohl(dest);
 +	u16 n16_idx;/*Index to N16 and C16*/
@@ -243,15 +243,13 @@ index 0000000..d59d3a7
 +    if (unlikely(ph->version != 4))
 +        return XDP_DROP;
 +
-+    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */
-+    bpf_printk("Hello world \n");/* DEBUG ONLY */
-+    
 +    s = bpf_map_lookup_elem(&sail_map, &key);
 +    if (!s)
 +            return XDP_ABORTED;
 +    
 +    ifindex = sail_lookup(s, ph->daddr);
-+    
++    /* sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output */
++    bpf_printk("Hello world \n");/* DEBUG ONLY */    
 +   
 +    return XDP_PASS;
 +}
