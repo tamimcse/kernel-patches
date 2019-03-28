@@ -259,7 +259,7 @@ index 0000000..d59d3a7
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..4406239
+index 0000000..a994e1b
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
 @@ -0,0 +1,1153 @@
@@ -1256,7 +1256,7 @@ index 0000000..4406239
 +                    printf("Error detaching the program \n");    
 +        }
 +        
-+	printf ("Detachinhg all \n");
++	printf ("Detaching all \n");
 +}
 +
 +int main(int argc, char **argv)
@@ -1327,7 +1327,7 @@ index 0000000..4406239
 +                    return 1;
 +            }
 +
-+            err = do_detach(ifindex[i]);
++            err = do_attach(ifindex[i], prog_fd);
 +            if (err)
 +                    printf("Error detaching the program \n");
 +        }
