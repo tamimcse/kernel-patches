@@ -28,10 +28,10 @@ index 65e667b..458b377 100644
  always += hbm_out_kern.o
 diff --git a/samples/bpf/sail.h b/samples/bpf/sail.h
 new file mode 100644
-index 0000000..d4b9ae9
+index 0000000..183dc9d
 --- /dev/null
 +++ b/samples/bpf/sail.h
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,63 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -46,7 +46,12 @@ index 0000000..d4b9ae9
 + */
 +
 +/*The length of N16, P16 and C16 is 2^16*/
-+#define LEVEL16_SIZE 65536
++#define LEVEL16_SIZE 10
++//#define LEVEL16_SIZE 65536
++
++#define LEVEL24_SIZE 5
++
++#define LEVEL32_SIZE 5
 +
 +/*Length of C24.*/
 +#define C24_SIZE 1048576
@@ -74,28 +79,28 @@ index 0000000..d4b9ae9
 +	char	def_nh;
 +
 +	/*Level 16*/
-+	char *N16;
-+	char *P16;
-+	__u16 *C16;
++	char N16[LEVEL16_SIZE];
++	char P16[LEVEL16_SIZE];
++	__u16 C16[LEVEL16_SIZE];
 +
 +	/*Level 24*/
-+	char *N24;
-+	char *P24;
-+	struct chunk *CK24;
-+	__u32 *C24;
++	char N24[LEVEL24_SIZE];
++	char P24[LEVEL24_SIZE];
++	struct chunk CK24[LEVEL24_SIZE];
++	__u32 C24[LEVEL32_SIZE];
 +	__u32 cnk24_count;/*Number of chunks in level 24*/
 +
 +	/*Level 32*/
-+	char *N32;
-+	char *P32;
++	char N32[LEVEL32_SIZE];
++	char P32[LEVEL32_SIZE];
 +	__u32 cnk32_count;/*Number of chunks in level 32*/
 +};
 diff --git a/samples/bpf/sail_kern.c b/samples/bpf/sail_kern.c
 new file mode 100644
-index 0000000..168ce11
+index 0000000..90cedb9
 --- /dev/null
 +++ b/samples/bpf/sail_kern.c
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,175 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2019-20 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -175,11 +180,6 @@ index 0000000..168ce11
 +	.max_entries = 64,
 +};
 +
-+/*
-+ * sudo ./bpftool prog show
-+ * sudo ./bpftool prog dump xlated id 4
-+ * sudo ./bpftool prog dump jited id 4
-+ */
 +
 +SEC("sail_lookup")
 +int sail_lookup_ebpf(struct xdp_md *ctx)
@@ -213,7 +213,8 @@ index 0000000..168ce11
 +
 +        /*extract 16 bits from LSB*/
 +        n16_idx = key >> 16;
-+        if (unlikely(!s->N16))
++        
++        if (n16_idx >= LEVEL16_SIZE )
 +            goto err;
 +
 +        if (likely(s->N16[n16_idx] != 0)) {
@@ -231,12 +232,21 @@ index 0000000..168ce11
 +	} else {
 +                goto err;
 +	}
++        
++        if (n24_idx >= LEVEL24_SIZE )
++            goto err;
 +
 +	/*Find corresponding next-hop in level 24*/
 +	if (likely(s->N24[n24_idx] != 0)) {
 +                ifindex = s->N24[n24_idx];
 +		goto finish;
 +        }
++        
++        if (ck24_idx >= LEVEL24_SIZE )
++            goto err;
++        
++        if (c24_idx >= LEVEL32_SIZE )
++            goto err;
 +
 +	/*Check if there is a longer prefix; if yes, extract 8 bits
 +	 * from MSB and calculate index to N32
@@ -251,6 +261,9 @@ index 0000000..168ce11
 +                goto err;
 +	}
 +
++        if (n32_idx >= LEVEL32_SIZE )
++            goto err;
++        
 +	if (likely(s->N32[n32_idx] != 0)) {
 +		ifindex = s->N32[n32_idx];
 +                goto finish;
@@ -265,7 +278,7 @@ index 0000000..168ce11
 +char _license[] SEC("license") = "GPL";
 diff --git a/samples/bpf/sail_user.c b/samples/bpf/sail_user.c
 new file mode 100644
-index 0000000..2e707cf
+index 0000000..4da762d
 --- /dev/null
 +++ b/samples/bpf/sail_user.c
 @@ -0,0 +1,1164 @@
@@ -911,43 +924,43 @@ index 0000000..2e707cf
 +		goto finish;
 +	}
 +
-+	/* Preallocate all the arrays at once*/
-+	if (!s->N16) {
-+		n16 = calloc(LEVEL16_SIZE, sizeof(*n16));
-+		p16 = calloc(LEVEL16_SIZE, sizeof(*p16));
-+		c16 = calloc(LEVEL16_SIZE, sizeof(*c16));
-+		n24 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24));
-+		p24 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24));
-+		ck24 = calloc(NUM_CHUNKS, sizeof(*ck24));
-+		c24 = calloc(C24_SIZE, sizeof(*c24));
-+		n32 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32));
-+		p32 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32));
-+
-+		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
-+		    !c24 || !n32 || !p32) {
-+			free(n16);
-+			free(c16);
-+			free(p16);
-+			free(n24);
-+			free(p24);
-+			free(ck24);
-+			free(c24);
-+			free(n32);
-+			free(p32);
-+			printf("Out of memory while preallocating  SAIL");
-+			goto error;
-+		}
-+
-+		s->N16 = n16;
-+		s->P16 = p16;
-+		s->C16 = c16;
-+		s->N24 = n24;
-+		s->P24 = p24;
-+		s->CK24 = ck24;
-+		s->C24 = c24;
-+		s->N32 = n32;
-+		s->P32 = p32;
-+	}
++//	/* Preallocate all the arrays at once*/
++//	if (!s->N16) {
++//		n16 = calloc(LEVEL16_SIZE, sizeof(*n16));
++//		p16 = calloc(LEVEL16_SIZE, sizeof(*p16));
++//		c16 = calloc(LEVEL16_SIZE, sizeof(*c16));
++//		n24 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24));
++//		p24 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24));
++//		ck24 = calloc(NUM_CHUNKS, sizeof(*ck24));
++//		c24 = calloc(C24_SIZE, sizeof(*c24));
++//		n32 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32));
++//		p32 = calloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32));
++//
++//		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
++//		    !c24 || !n32 || !p32) {
++//			free(n16);
++//			free(c16);
++//			free(p16);
++//			free(n24);
++//			free(p24);
++//			free(ck24);
++//			free(c24);
++//			free(n32);
++//			free(p32);
++//			printf("Out of memory while preallocating  SAIL");
++//			goto error;
++//		}
++//
++//		s->N16 = n16;
++//		s->P16 = p16;
++//		s->C16 = c16;
++//		s->N24 = n24;
++//		s->P24 = p24;
++//		s->CK24 = ck24;
++//		s->C24 = c24;
++//		s->N32 = n32;
++//		s->P32 = p32;
++//	}
 +
 +	/*Eextract 16 bits from LSB.*/
 +	n16_idx = key >> 16;
@@ -1181,44 +1194,44 @@ index 0000000..2e707cf
 +	__u32 *c24_old;
 +	struct chunk *ck24_old;
 +
-+	/*Save old pointers*/
-+	n16_old = s->N16;
-+	p16_old = s->P16;
-+	c16_old = s->C16;
-+	n24_old = s->N24;
-+	p24_old = s->P24;
-+	c24_old = s->C24;
-+	ck24_old = s->CK24;
-+	n32_old = s->N32;
-+	p32_old = s->P32;
++//	/*Save old pointers*/
++//	n16_old = s->N16;
++//	p16_old = s->P16;
++//	c16_old = s->C16;
++//	n24_old = s->N24;
++//	p24_old = s->P24;
++//	c24_old = s->C24;
++//	ck24_old = s->CK24;
++//	n32_old = s->N32;
++//	p32_old = s->P32;
 +
 +	/*Set the counter before the chunk are deleted*/
 +	s->cnk32_count = 0;
 +	s->cnk24_count = 0;
 +
-+	/*Set the pointers to NULL*/
-+	s->N16 = NULL;
-+	s->P16 = NULL;
-+	s->C16 = NULL;
-+
-+	s->N24 = NULL;
-+	s->P24 = NULL;
-+	s->C24 = NULL;
-+	s->CK24 = NULL;
-+
-+	s->N32 = NULL;
-+	s->P32 = NULL;
-+
-+	/* Deallocate old references after setting them NULL*/
-+	free(n16_old);
-+	free(p16_old);
-+	free(c16_old);
-+	free(n24_old);
-+	free(p24_old);
-+	free(c24_old);
-+	free(ck24_old);
-+	free(n32_old);
-+	free(p32_old);
++//	/*Set the pointers to NULL*/
++//	s->N16 = NULL;
++//	s->P16 = NULL;
++//	s->C16 = NULL;
++//
++//	s->N24 = NULL;
++//	s->P24 = NULL;
++//	s->C24 = NULL;
++//	s->CK24 = NULL;
++//
++//	s->N32 = NULL;
++//	s->P32 = NULL;
++//
++//	/* Deallocate old references after setting them NULL*/
++//	free(n16_old);
++//	free(p16_old);
++//	free(c16_old);
++//	free(n24_old);
++//	free(p24_old);
++//	free(c24_old);
++//	free(ck24_old);
++//	free(n32_old);
++//	free(p32_old);
 +
 +	return 0;
 +}
