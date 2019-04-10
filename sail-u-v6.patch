@@ -2288,20 +2288,23 @@ index 0000000..87305bb
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..3fc1254 100644
+index 826b14d..603dfa3 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1158,6 +1158,13 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,6 +1157,16 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+ {
  	int err;
  	struct fib6_table *table;
- 
-+        u64 p1 = ntohl(rt->fib6_dst.addr.s6_addr32[0]);
-+        u32 p2 = ntohl(rt->fib6_dst.addr.s6_addr32[1]);
-+        u64 key = ( p1 << 32) | p2;
-+        
-+        pr_err("%pI6c %d => %s P1=%llu P2=%u Key=%llu", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name, p1, p2, key);
-+        sailv6_insert(&rt->sailv6, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);     
++        u64 key;
++        __be16 *addr_ipv6 =  rt->fib6_dst.addr.in6_u.u6_addr16;
 +
++        pr_err("%pI6c %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
++        pr_err("addr[0]=%d addr[1]=%d addr[2]=%d addr[3]=%d", ntohs(addr_ipv6[0]), ntohs(addr_ipv6[1]), ntohs(addr_ipv6[2]), ntohs(addr_ipv6[3]));
++        
++        key = ((__force u64)(ntohs(addr_ipv6[1])) << 16) | (__force u64)(ntohs(addr_ipv6[0]));
++        pr_err("Key=%llu", key);
++
++        sailv6_insert(&rt->sailv6, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);     
+ 
  	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
- 	err = fib6_add(&table->tb6_root, rt, info, extack);
