@@ -1342,7 +1342,7 @@ index e0026fa..4b50176 100644
  obj-y += mcast_snoop.o
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..a2b4df8
+index 0000000..6226abc
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,939 @@
@@ -1904,156 +1904,156 @@ index 0000000..a2b4df8
 +	spin_lock(&s->lock);
 +
 +	/* Default route */
-+//	if (prefix_len == 0) {
-+//		s->def_nh = netdev_index;
-+//		goto finish;
-+//	}
-+//
-+//	/* Preallocate all the arrays at once*/
-+//	if (!s->N16) {
-+//		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
-+//		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
-+//		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
-+//		n24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24),
-+//			      GFP_ATOMIC);
-+//		p24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24),
-+//			      GFP_ATOMIC);
-+//		ck24 = kcalloc(NUM_CHUNKS, sizeof(*ck24), GFP_ATOMIC);
-+//		c24 = kcalloc(C24_SIZE, sizeof(*c24), GFP_ATOMIC);
-+//		n32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32),
-+//			      GFP_ATOMIC);
-+//		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32),
-+//			      GFP_ATOMIC);
-+//
-+//		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
-+//		    !c24 || !n32 || !p32) {
-+//			kfree(n16);
-+//			kfree(c16);
-+//			kfree(p16);
-+//			kfree(n24);
-+//			kfree(p24);
-+//			kfree(ck24);
-+//			kfree(c24);
-+//			kfree(n32);
-+//			kfree(p32);
-+//			pr_err("Out of memory while preallocating  SAIL");
-+//			goto error;
-+//		}
-+//
-+//		RCU_INIT_POINTER(s->N16, n16);
-+//		RCU_INIT_POINTER(s->P16, p16);
-+//		RCU_INIT_POINTER(s->C16, c16);
-+//		RCU_INIT_POINTER(s->N24, n24);
-+//		RCU_INIT_POINTER(s->P24, p24);
-+//		RCU_INIT_POINTER(s->CK24, ck24);
-+//		RCU_INIT_POINTER(s->C24, c24);
-+//		RCU_INIT_POINTER(s->N32, n32);
-+//		RCU_INIT_POINTER(s->P32, p32);
-+//
++	if (prefix_len == 0) {
++		s->def_nh = netdev_index;
++		goto finish;
++	}
++
++	/* Preallocate all the arrays at once*/
++	if (!s->N16) {
++		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
++		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
++		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
++		n24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24),
++			      GFP_ATOMIC);
++		p24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24),
++			      GFP_ATOMIC);
++		ck24 = kcalloc(NUM_CHUNKS, sizeof(*ck24), GFP_ATOMIC);
++		c24 = kcalloc(C24_SIZE, sizeof(*c24), GFP_ATOMIC);
++		n32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32),
++			      GFP_ATOMIC);
++		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32),
++			      GFP_ATOMIC);
++
++		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
++		    !c24 || !n32 || !p32) {
++			kfree(n16);
++			kfree(c16);
++			kfree(p16);
++			kfree(n24);
++			kfree(p24);
++			kfree(ck24);
++			kfree(c24);
++			kfree(n32);
++			kfree(p32);
++			pr_err("Out of memory while preallocating  SAIL");
++			goto error;
++		}
++
++		RCU_INIT_POINTER(s->N16, n16);
++		RCU_INIT_POINTER(s->P16, p16);
++		RCU_INIT_POINTER(s->C16, c16);
++		RCU_INIT_POINTER(s->N24, n24);
++		RCU_INIT_POINTER(s->P24, p24);
++		RCU_INIT_POINTER(s->CK24, ck24);
++		RCU_INIT_POINTER(s->C24, c24);
++		RCU_INIT_POINTER(s->N32, n32);
++		RCU_INIT_POINTER(s->P32, p32);
++
 +//		synchronize_rcu();
-+//	}
-+//
-+//	/*Eextract 16 bits from LSB.*/
-+//	n16_idx = key >> 16;
-+//
-+//	if (prefix_len <= 16) {
-+//		/*All the leafs in level 1~16 will be stored in level 16.*/
-+//		num_leafs = 1U << (16 - prefix_len);
-+//		for (i = 0; i < num_leafs; i++) {
-+//			/*Longer prefix exists*/
-+//			if (s->P16[n16_idx + i] > prefix_len)
-+//				continue;
-+//			s->N16[n16_idx + i] = netdev_index;
-+//			s->P16[n16_idx + i] = prefix_len;
-+//		}
-+//		goto finish;
-+//	}
-+//
-+//	/* The length of the prefix is 21~32. So need to check if there is a
-+//	 * chunk for this prefix in level 24. C16[..] = 0 indicates that there
-+//	 * is no chunk, so need to insert one. The insertion works as
-+//	 * following:
-+//	 * 1. Calculate the chunk ID to level 24 from C16. The Chunk ID
-+//	 * indicates where the new chunk should be inserted.
-+//	 * 2. Insert a new chunk in level 24
-+//	 * 3. Update the C16[] based on the newly inserted chunk
-+//	 */
-+//	if (s->C16[n16_idx] == 0) {
-+//		/*Step 1*/
-+//		chunk_id = calc_ckid24_from_C16(s->C16, LEVEL16_SIZE, n16_idx);
-+//		if (!chunk_id)
-+//			goto error;
-+//		/*Step 2*/
-+//		err = chunk24_insert(s, chunk_id);
-+//		if (err)
-+//			goto error;
-+//		/*Step 3*/
-+//		err = update_C16(s->C16, LEVEL16_SIZE, n16_idx, chunk_id);
-+//		if (err)
-+//			goto error;
-+//	}
-+//
-+//	/*Extract bit 17~24 and calculate index to level 24*/
-+//	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
-+//	ck24_idx = s->C16[n16_idx] - 1;
-+//	ck24_off = (key & 65280) >> 8;
-+//
-+//	if (prefix_len <= 24) {
-+//		/*All the leafs in level 17~24 will be stored in level 24.*/
-+//		num_leafs = 1U << (24 - prefix_len);
-+//		for (i = 0; i < num_leafs; i++) {
-+//			/*Longer prefix exists*/
-+//			if (s->P24[n24_idx + i] > prefix_len)
-+//				continue;
-+//			s->N24[n24_idx + i] = netdev_index;
-+//			s->P24[n24_idx + i] = prefix_len;
-+//		}
-+//		goto finish;
-+//	}
-+//
-+//	/* The length of the prefix is 25~32, but there is no chunk for
-+//	 * this prefix in level 32. So need to insert a new one.
-+//	 * The insertion works as following:
-+//	 * 1. Calculate the chunk ID to level 32 from CK24 and C24. The
-+//	 * Chunk ID indicates where the new chunk should be inserted.
-+//	 * 2. Insert a new chunk in level 32
-+//	 * 3. Update the CK24 and C24 based on the newly inserted chunk
-+//	 */
-+//	part_idx = ck24_off / 64;
-+//	part_off = ck24_off % 64;
-+//	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
-+//		/*Step 1*/
-+//		chunk_id = calc_ckid32_from_ck24(s->CK24, ck24_idx,
-+//						 ck24_off, s->C24);
-+//		if (!chunk_id)
-+//			goto error;
-+//		/*Step 2*/
-+//		err = chunk32_insert(s, chunk_id);
-+//		if (err)
-+//			goto error;
-+//		/*Step 3*/
-+//		err = update_ck24_c24(s->CK24, ck24_idx, ck24_off,
-+//				      s->C24, s->cnk24_count, chunk_id);
-+//		if (err)
-+//			goto error;
-+//	}
-+//
-+//	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
-+//	/*Extract 8 bit from MSB and calculate index to level 32*/
-+//	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
-+//
-+//	if (prefix_len <= 32) {
-+//		/*All the leafs in level 25~32 will be stored in level 32.*/
-+//		num_leafs = 1U << (32 - prefix_len);
-+//		for (i = 0; i < num_leafs; i++) {
-+//			/*Longer prefix exists*/
-+//			if (s->P32[n32_idx + i] > prefix_len)
-+//				continue;
-+//			s->N32[n32_idx + i] = netdev_index;
-+//			s->P32[n32_idx + i] = prefix_len;
-+//		}
-+//		goto finish;
-+//	}
++	}
++
++	/*Eextract 16 bits from LSB.*/
++	n16_idx = key >> 16;
++
++	if (prefix_len <= 16) {
++		/*All the leafs in level 1~16 will be stored in level 16.*/
++		num_leafs = 1U << (16 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P16[n16_idx + i] > prefix_len)
++				continue;
++			s->N16[n16_idx + i] = netdev_index;
++			s->P16[n16_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The length of the prefix is 21~32. So need to check if there is a
++	 * chunk for this prefix in level 24. C16[..] = 0 indicates that there
++	 * is no chunk, so need to insert one. The insertion works as
++	 * following:
++	 * 1. Calculate the chunk ID to level 24 from C16. The Chunk ID
++	 * indicates where the new chunk should be inserted.
++	 * 2. Insert a new chunk in level 24
++	 * 3. Update the C16[] based on the newly inserted chunk
++	 */
++	if (s->C16[n16_idx] == 0) {
++		/*Step 1*/
++		chunk_id = calc_ckid24_from_C16(s->C16, LEVEL16_SIZE, n16_idx);
++		if (!chunk_id)
++			goto error;
++		/*Step 2*/
++		err = chunk24_insert(s, chunk_id);
++		if (err)
++			goto error;
++		/*Step 3*/
++		err = update_C16(s->C16, LEVEL16_SIZE, n16_idx, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	/*Extract bit 17~24 and calculate index to level 24*/
++	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
++	ck24_idx = s->C16[n16_idx] - 1;
++	ck24_off = (key & 65280) >> 8;
++
++	if (prefix_len <= 24) {
++		/*All the leafs in level 17~24 will be stored in level 24.*/
++		num_leafs = 1U << (24 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P24[n24_idx + i] > prefix_len)
++				continue;
++			s->N24[n24_idx + i] = netdev_index;
++			s->P24[n24_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The length of the prefix is 25~32, but there is no chunk for
++	 * this prefix in level 32. So need to insert a new one.
++	 * The insertion works as following:
++	 * 1. Calculate the chunk ID to level 32 from CK24 and C24. The
++	 * Chunk ID indicates where the new chunk should be inserted.
++	 * 2. Insert a new chunk in level 32
++	 * 3. Update the CK24 and C24 based on the newly inserted chunk
++	 */
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
++		/*Step 1*/
++		chunk_id = calc_ckid32_from_ck24(s->CK24, ck24_idx,
++						 ck24_off, s->C24);
++		if (!chunk_id)
++			goto error;
++		/*Step 2*/
++		err = chunk32_insert(s, chunk_id);
++		if (err)
++			goto error;
++		/*Step 3*/
++		err = update_ck24_c24(s->CK24, ck24_idx, ck24_off,
++				      s->C24, s->cnk24_count, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
++	/*Extract 8 bit from MSB and calculate index to level 32*/
++	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++
++	if (prefix_len <= 32) {
++		/*All the leafs in level 25~32 will be stored in level 32.*/
++		num_leafs = 1U << (32 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P32[n32_idx + i] > prefix_len)
++				continue;
++			s->N32[n32_idx + i] = netdev_index;
++			s->P32[n32_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
 +
 +error:
 +	pr_err("Something went wrong in route insertion");
@@ -2286,18 +2286,26 @@ index 0000000..a2b4df8
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..99b4eba 100644
+index 826b14d..f84025c 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1162,6 +1162,11 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,12 +1157,19 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+ {
+ 	int err;
+ 	struct fib6_table *table;
++        
++        sailv6_insert(&rt->sailv6, 6, 7, rt->fib6_nh.nh_dev);     
+ 
+ 	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
  	err = fib6_add(&table->tb6_root, rt, info, extack);
  	spin_unlock_bh(&table->tb6_lock);
-+        sailv6_insert(&rt->sailv6, 6, 7, rt->fib6_nh.nh_dev);
+ 
 +        
 +        pr_err("%pi6 %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
 +        //&rt->fib6_dst.addr, rt->fib6_dst.plen
 +//        pr_err("inserting routes");
- 
++
  	return err;
  }
+ 
