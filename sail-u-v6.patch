@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..1d04370 100644
+index 3d49305..dcfc408 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -133,6 +133,62 @@ struct fib6_nh {
@@ -69,7 +69,7 @@ index 3d49305..1d04370 100644
 +	spinlock_t lock;
 +};
 +
-+int sailv6_insert(struct sailv6 *s, u32 key,
++int sailv6_insert(struct sailv6 *s, struct in6_addr *addr,
 +		u8 prefix_len, struct net_device *dev);
 +int sailv6_delete(struct sailv6 *s, u32 key,
 +		u8 prefix_len);
@@ -1342,10 +1342,10 @@ index e0026fa..4b50176 100644
  obj-y += mcast_snoop.o
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..6226abc
+index 0000000..4de37fe
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,939 @@
+@@ -0,0 +1,940 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1881,7 +1881,7 @@ index 0000000..6226abc
 +	return 0;
 +}
 +
-+int sailv6_insert(struct sailv6 *s, u32 key, u8 prefix_len,
++int sailv6_insert(struct sailv6 *s, struct in6_addr *addr, u8 prefix_len,
 +		struct net_device *dev)
 +{
 +	int i;
@@ -1900,9 +1900,10 @@ index 0000000..6226abc
 +	u32 num_leafs;/*Number of leafs need to be inserted for this prefix*/
 +	u8 netdev_index = get_netdev_index(s, dev);
 +	int err = 0;
++        u64 key = 5;//(addr.s6_addr32[1] << 32) || addr.s6_addr32[0];
 +
 +	spin_lock(&s->lock);
-+
++        
 +	/* Default route */
 +	if (prefix_len == 0) {
 +		s->def_nh = netdev_index;
@@ -2286,26 +2287,16 @@ index 0000000..6226abc
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..f84025c 100644
+index 826b14d..27decf1 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1157,12 +1157,19 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
- {
+@@ -1158,6 +1158,9 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  	int err;
  	struct fib6_table *table;
-+        
-+        sailv6_insert(&rt->sailv6, 6, 7, rt->fib6_nh.nh_dev);     
  
++        pr_err("%pi6 %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);        
++        sailv6_insert(&rt->sailv6, &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);     
++
  	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
  	err = fib6_add(&table->tb6_root, rt, info, extack);
- 	spin_unlock_bh(&table->tb6_lock);
- 
-+        
-+        pr_err("%pi6 %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
-+        //&rt->fib6_dst.addr, rt->fib6_dst.plen
-+//        pr_err("inserting routes");
-+
- 	return err;
- }
- 
