@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..ce3754e 100644
+index 3d49305..baea0e4 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -133,6 +133,62 @@ struct fib6_nh {
+@@ -133,6 +133,69 @@ struct fib6_nh {
  	int			nh_weight;
  };
  
@@ -31,14 +31,14 @@ index 3d49305..ce3754e 100644
 +
 +struct chunkv6 {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
-+	u64 bitmap[4];
++	u64 bitmap[1024];
 +	/*
 +	 * Index to C24 where chunk is started. A chunk corresponds
 +	 * to 256 elements. Instead of having just one start index for the
 +	 * whole chunk, we divide the chunk into 4 parts and save start
 +	 * index for each part.
 +	 */
-+	u64 start_index[4];
++	u64 start_index[1024];
 +};
 +
 +struct sailv6 {
@@ -50,6 +50,13 @@ index 3d49305..ce3754e 100644
 +	u8 __rcu *P16;
 +	u16 __rcu *C16;
 +
++	/*Level 32*/
++	u8 __rcu *N32_new;
++	u8 __rcu *P32_new;
++	struct chunkv6 __rcu *CK32_new;
++	u16 __rcu *C32_new;
++	u32 cnk32_count_new;/*Number of chunks in level 24*/
++        
 +	/*Level 24*/
 +	u8 __rcu *N24;
 +	u8 __rcu *P24;
@@ -81,7 +88,7 @@ index 3d49305..ce3754e 100644
  struct fib6_info {
  	struct fib6_table		*fib6_table;
  	struct fib6_info __rcu		*fib6_next;
-@@ -168,6 +224,11 @@ struct fib6_info {
+@@ -168,6 +231,11 @@ struct fib6_info {
  					dst_nopolicy:1,
  					dst_host:1,
  					unused:3;
@@ -1342,7 +1349,7 @@ index e0026fa..4b50176 100644
  obj-y += mcast_snoop.o
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..f6345f2
+index 0000000..1e09860
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,941 @@
@@ -1384,7 +1391,7 @@ index 0000000..f6345f2
 +#define C24_SIZE 1048576
 +
 +/*chunk size is 2^8*/
-+#define CHUNK_SIZE 256
++#define CHUNK_SIZE 65536
 +
 +/*Total number of chunks preallocated for level 24 and 32*/
 +#define NUM_CHUNKS 16384
@@ -1995,20 +2002,20 @@ index 0000000..f6345f2
 +			goto error;
 +	}
 +
-+	/*Extract bit 17~24 and calculate index to level 24*/
-+	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
++        /*Extract bit 17~32 and calculate index to level 24*/
++	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 0XFFFF00000000) >> 32);
 +	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;
++	ck24_off = (key & 0XFFFF00000000) >> 32;
 +
-+	if (prefix_len <= 24) {
++	if (prefix_len <= 32) {
 +		/*All the leafs in level 17~24 will be stored in level 24.*/
-+		num_leafs = 1U << (24 - prefix_len);
++		num_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < num_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->P24[n24_idx + i] > prefix_len)
++			if (s->P32_new[n24_idx + i] > prefix_len)
 +				continue;
-+			s->N24[n24_idx + i] = netdev_index;
-+			s->P24[n24_idx + i] = prefix_len;
++			s->N32_new[n24_idx + i] = netdev_index;
++			s->P32_new[n24_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
