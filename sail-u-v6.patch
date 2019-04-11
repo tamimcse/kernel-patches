@@ -1342,7 +1342,7 @@ index e0026fa..4b50176 100644
  obj-y += mcast_snoop.o
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..87305bb
+index 0000000..f6345f2
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,941 @@
@@ -1956,7 +1956,7 @@ index 0000000..87305bb
 +	}
 +
 +	/*Eextract 16 bits from LSB.*/
-+	n16_idx = key >> 16;
++	n16_idx = key >> 48;
 +
 +	if (prefix_len <= 16) {
 +		/*All the leafs in level 1~16 will be stored in level 16.*/
