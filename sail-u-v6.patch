@@ -1353,7 +1353,7 @@ index e0026fa..4b50176 100644
  obj-y += mcast_snoop.o
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..2054789
+index 0000000..2a4d3e1
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,944 @@
@@ -1410,7 +1410,7 @@ index 0000000..2054789
 +#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*Calculate index to C24 from CK26 chunk and chunk offset */
-+static u64 calc_c24_idx(struct chunkv6 c, u32 cnk_off)
++static u64 calc_c_idx(struct chunkv6 c, u32 cnk_off)
 +{
 +	u8 part_idx, part_off;
 +
@@ -1722,7 +1722,7 @@ index 0000000..2054789
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	chunk_id = s->C24[calc_c24_idx(s->CK24[cnk_idx], cnk_off)];
++	chunk_id = s->C24[calc_c_idx(s->CK24[cnk_idx], cnk_off)];
 +	s->CK24[cnk_idx].bitmap[part_idx] &= ~(1ULL << part_off);
 +
 +	for (i = 0; i < C24_SIZE; i++) {
@@ -1906,7 +1906,7 @@ index 0000000..2054789
 +	u16 chunk_id;
 +	u16 n16_idx;/*Index to N16, P16 and C16*/
 +	u64 n32_idx;/*Index to N24 and P24*/
-+	u64 c48_idx;/*Index to C24*/
++	u64 c32_idx;/*Index to C24*/
 +	u32 ck32_idx;/*Index to CK24*/
 +	u64 ck32_off;/*offset inside a chunk*/
 +	u8 part_idx, part_off;
@@ -2054,9 +2054,9 @@ index 0000000..2054789
 +			goto error;
 +	}
 +
-+	c48_idx = calc_c24_idx(s->CK24[ck32_idx], ck32_off);
++	c32_idx = calc_c_idx(s->CK24[ck32_idx], ck32_off);
 +	/*Extract 8 bit from MSB and calculate index to level 32*/
-+	n48_idx = (s->C32[c48_idx] - 1) * CHUNK_SIZE + ((key & 0XFFFF0000) >> 16);
++	n48_idx = (s->C32[c32_idx] - 1) * CHUNK_SIZE + ((key & 0XFFFF0000) >> 16);
 +
 +	if (prefix_len <= 48) {
 +		/*All the leafs in level 25~32 will be stored in level 32.*/
@@ -2146,7 +2146,7 @@ index 0000000..2054789
 +	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)))
 +		goto error;
 +
-+	chunkid_level32 = s->C24[calc_c24_idx(s->CK24[ck24_idx], ck24_off)];
++	chunkid_level32 = s->C24[calc_c_idx(s->CK24[ck24_idx], ck24_off)];
 +
 +	/*Extract 8 bit from MSB and calculate index to level 32*/
 +	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
