@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..b34bbec 100644
+index 3d49305..c37c22e 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,77 @@
+@@ -40,6 +40,84 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -70,6 +70,13 @@ index 3d49305..b34bbec 100644
 +	struct chunk __rcu *CK40;
 +	u16 __rcu *C40;
 +	u32 cnk40_count;/*Number of chunks in level 40*/
++        
++	/*Level 48*/
++	u8 __rcu *N48;
++	u8 __rcu *P48;
++	struct chunk __rcu *CK48;
++	u16 __rcu *C48;
++	u32 cnk48_count;/*Number of chunks in level 48*/
 +
 +	/*Level 64*/
 +	u8 __rcu *N64;
@@ -96,7 +103,7 @@ index 3d49305..b34bbec 100644
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +413,10 @@ struct fib6_table {
+@@ -342,6 +420,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -143,10 +150,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..bf94e72
+index 0000000..d1cef89
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1085 @@
+@@ -0,0 +1,1119 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -759,12 +766,9 @@ index 0000000..bf94e72
 +		struct net_device *dev)
 +{
 +	int i;
-+	u8 *n16, *p16, *n24, *p24, *n32, *p32, *n40, *p40, *n64, *p64;
-+	u16 *c16;
-+	u16 *c24;
-+	u16 *c32;
-+	u16 *c40;
-+	struct chunk *ck24, *ck32, *ck40;
++	u8 *n16, *p16, *n24, *p24, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
++	u16 *c16, *c24, *c32, *c40, *c48;
++	struct chunk *ck24, *ck32, *ck40, *ck48;
 +	u16 chunk_id;
 +	u16 n16_idx;/*Index to N16, P16 and C16*/
 +	u64 n24_idx;/*Index to N24 and P24*/
@@ -781,6 +785,11 @@ index 0000000..bf94e72
 +	u64 c40_idx;/*Index to C40*/
 +	u32 ck40_idx;/*Index to CK40*/
 +	u64 ck40_off;/*offset inside a chunk*/
++        
++	u64 n48_idx;/*Index to N48 and P48*/
++	u64 c48_idx;/*Index to C48*/
++	u32 ck48_idx;/*Index to CK48*/
++	u64 ck48_off;/*offset inside a chunk*/
 +        
 +	u8 part_idx, part_off;
 +	u64 n64_idx;/*Index to N64 and P64*/
@@ -812,15 +821,19 @@ index 0000000..bf94e72
 +		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32),
 +			      GFP_ATOMIC);
 +		ck32 = kcalloc(NUM_CHUNKS, sizeof(*ck32), GFP_ATOMIC);
-+		c32 = kcalloc(C_SIZE, sizeof(*c32), GFP_ATOMIC);
-+                
++		c32 = kcalloc(C_SIZE, sizeof(*c32), GFP_ATOMIC);                
 +		n40 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n40),
 +			      GFP_ATOMIC);
 +		p40 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p40),
 +			      GFP_ATOMIC);
 +		ck40 = kcalloc(NUM_CHUNKS, sizeof(*ck40), GFP_ATOMIC);
 +		c40 = kcalloc(C_SIZE, sizeof(*c40), GFP_ATOMIC);
-+                
++		n48 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n48),
++			      GFP_ATOMIC);
++		p48 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p48),
++			      GFP_ATOMIC);
++		ck48 = kcalloc(NUM_CHUNKS, sizeof(*ck48), GFP_ATOMIC);
++		c48 = kcalloc(C_SIZE, sizeof(*c48), GFP_ATOMIC);
 +		n64 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n64),
 +			      GFP_ATOMIC);
 +		p64 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p64),
@@ -828,7 +841,8 @@ index 0000000..bf94e72
 +
 +		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
 +		    !c24 || !n32 || !p32 || !ck32 || !c32 ||
-+                    !n40 || !p40 || !ck40 || !c40 || !n64 || !p64) {
++                    !n40 || !p40 || !ck40 || !c40 ||
++                    !n48 || !p48 || !ck48 || !c48 || !n64 || !p64) {
 +			kfree(n16);
 +			kfree(c16);
 +			kfree(p16);
@@ -844,6 +858,10 @@ index 0000000..bf94e72
 +			kfree(p40);
 +			kfree(ck40);
 +			kfree(c40);
++			kfree(n48);
++			kfree(p48);
++			kfree(ck48);
++			kfree(c48);
 +			kfree(n64);
 +			kfree(p64);
 +			pr_err("Out of memory while preallocating  SAIL");
@@ -865,6 +883,10 @@ index 0000000..bf94e72
 +		RCU_INIT_POINTER(s->P40, p40);
 +		RCU_INIT_POINTER(s->CK40, ck40);
 +		RCU_INIT_POINTER(s->C40, c40);
++		RCU_INIT_POINTER(s->N48, n48);
++		RCU_INIT_POINTER(s->P48, p48);
++		RCU_INIT_POINTER(s->CK48, ck48);
++		RCU_INIT_POINTER(s->C48, c48);
 +		RCU_INIT_POINTER(s->N64, n64);
 +		RCU_INIT_POINTER(s->P64, p64);
 +
@@ -1000,6 +1022,25 @@ index 0000000..bf94e72
 +				      s->C32, s->cnk32_count, chunk_id);
 +		if (err)
 +			goto error;
++	}
++        
++	c32_idx = calc_c_idx(s->CK32[ck32_idx], ck32_off);
++	/*Extract 8 bit from MSB and calculate index to level 32*/
++	n40_idx = (s->C32[c32_idx] - 1) * CHUNK_SIZE + ((key & 0XFFFFFFFF) >> 24);
++	ck40_idx = s->C32[c32_idx] - 1;
++	ck40_off = (key & 0XFFFFFFFF) >> 24;
++
++	if (prefix_len <= 40) {
++		/*All the leafs in level 25~32 will be stored in level 32.*/
++		num_leafs = 1U << (40 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P40[n40_idx + i] > prefix_len)
++				continue;
++			s->N40[n40_idx + i] = netdev_index;
++			s->P40[n40_idx + i] = prefix_len;
++		}
++		goto finish;
 +	}
 +
 +error:
