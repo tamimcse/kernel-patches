@@ -150,10 +150,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..d1cef89
+index 0000000..407cff8
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1119 @@
+@@ -0,0 +1,1183 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -349,7 +349,7 @@ index 0000000..d1cef89
 +	return 0;
 +}
 +
-+/* Insert a new chunk to level 32 at chunk_id-1. Note that Chunk ID
++/* Insert a new chunk to level 40 at chunk_id-1. Note that Chunk ID
 + * starts from 1, not 0
 + */
 +static int chunk40_insert(struct sail *s, u16 chunk_id)
@@ -383,6 +383,43 @@ index 0000000..d1cef89
 +	}
 +
 +	++s->cnk40_count;
++	return 0;
++}
++
++/* Insert a new chunk to level 48 at chunk_id-1. Note that Chunk ID
++ * starts from 1, not 0
++ */
++static int chunk48_insert(struct sail *s, u16 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->cnk48_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 48");
++		return -EINVAL;
++	}
++
++	if (s->cnk48_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a new chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk48_count * CHUNK_SIZE - 1;
++	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++		s->N48[m + CHUNK_SIZE] = s->N48[m];
++		s->P48[m + CHUNK_SIZE] = s->P48[m];
++	}
++
++	/*Reset the newly created empty chunk*/
++	m = (chunk_id - 1) * CHUNK_SIZE;
++	for (; m < chunk_id * CHUNK_SIZE; m++) {
++		s->N48[m] = 0;
++		s->P48[m] = 0;
++	}
++
++	++s->cnk48_count;
 +	return 0;
 +}
 +
@@ -997,7 +1034,7 @@ index 0000000..d1cef89
 +		goto finish;
 +	}
 +        
-+	/* The length of the prefix is 23~40, but there is no chunk for
++	/* The length of the prefix is 33~40, but there is no chunk for
 +	 * this prefix in level 32. So need to insert a new one.
 +	 * The insertion works as following:
 +	 * 1. Calculate the chunk ID to level 32 from CK24 and C24. The
@@ -1041,6 +1078,33 @@ index 0000000..d1cef89
 +			s->P40[n40_idx + i] = prefix_len;
 +		}
 +		goto finish;
++	}
++        
++	/* The length of the prefix is 41~48, but there is no chunk for
++	 * this prefix in level 32. So need to insert a new one.
++	 * The insertion works as following:
++	 * 1. Calculate the chunk ID to level 32 from CK24 and C24. The
++	 * Chunk ID indicates where the new chunk should be inserted.
++	 * 2. Insert a new chunk in level 32
++	 * 3. Update the CK24 and C24 based on the newly inserted chunk
++	 */
++	part_idx = ck40_off / 64;
++	part_off = ck40_off % 64;
++	if (!(s->CK40[ck40_idx].bitmap[part_idx] & (1ULL << part_off))) {
++		/*Step 1*/
++		chunk_id = calc_ckid(s->CK40, ck40_idx,
++						 ck40_off, s->C40);
++		if (!chunk_id)
++			goto error;
++		/*Step 2*/
++		err = chunk48_insert(s, chunk_id);
++		if (err)
++			goto error;
++		/*Step 3*/
++		err = update_ck_c(s->CK40, ck40_idx, ck40_off,
++				      s->C40, s->cnk40_count, chunk_id);
++		if (err)
++			goto error;
 +	}
 +
 +error:
