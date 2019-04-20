@@ -157,10 +157,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..024b064
+index 0000000..0141863
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1345 @@
+@@ -0,0 +1,1197 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -317,154 +317,6 @@ index 0000000..024b064
 +	else
 +		pr_err("Error in level 24 insertion");
 +	return err;
-+}
-+
-+/* Insert a new chunk to level 32 at chunk_id-1. Note that Chunk ID
-+ * starts from 1, not 0
-+ */
-+static int chunk32_insert(struct sail *s, u16 chunk_id)
-+{
-+	long long m;
-+
-+	if (chunk_id > (s->cnk32_count + 1) || chunk_id < 1) {
-+		pr_err("Invalid chunk_id for level 32");
-+		return -EINVAL;
-+	}
-+
-+	if (s->cnk32_count >= NUM_CHUNKS) {
-+		pr_err("Cannot insert a new chunk. The chunk array is full");
-+		return -EINVAL;
-+	}
-+
-+	/*shift each element one step right to make
-+	 *space for the new one
-+	 */
-+	m = (long long)s->cnk32_count * CHUNK_SIZE - 1;
-+	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+		s->N32[m + CHUNK_SIZE] = s->N32[m];
-+		s->P32[m + CHUNK_SIZE] = s->P32[m];
-+	}
-+
-+	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * CHUNK_SIZE;
-+	for (; m < chunk_id * CHUNK_SIZE; m++) {
-+		s->N32[m] = 0;
-+		s->P32[m] = 0;
-+	}
-+
-+	++s->cnk32_count;
-+	return 0;
-+}
-+
-+/* Insert a new chunk to level 40 at chunk_id-1. Note that Chunk ID
-+ * starts from 1, not 0
-+ */
-+static int chunk40_insert(struct sail *s, u16 chunk_id)
-+{
-+	long long m;
-+
-+	if (chunk_id > (s->cnk40_count + 1) || chunk_id < 1) {
-+		pr_err("Invalid chunk_id for level 40");
-+		return -EINVAL;
-+	}
-+
-+	if (s->cnk40_count >= NUM_CHUNKS) {
-+		pr_err("Cannot insert a new chunk. The chunk array is full");
-+		return -EINVAL;
-+	}
-+
-+	/*shift each element one step right to make
-+	 *space for the new one
-+	 */
-+	m = (long long)s->cnk40_count * CHUNK_SIZE - 1;
-+	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+		s->N40[m + CHUNK_SIZE] = s->N40[m];
-+		s->P40[m + CHUNK_SIZE] = s->P40[m];
-+	}
-+
-+	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * CHUNK_SIZE;
-+	for (; m < chunk_id * CHUNK_SIZE; m++) {
-+		s->N40[m] = 0;
-+		s->P40[m] = 0;
-+	}
-+
-+	++s->cnk40_count;
-+	return 0;
-+}
-+
-+/* Insert a new chunk to level 48 at chunk_id-1. Note that Chunk ID
-+ * starts from 1, not 0
-+ */
-+static int chunk48_insert(struct sail *s, u16 chunk_id)
-+{
-+	long long m;
-+
-+	if (chunk_id > (s->cnk48_count + 1) || chunk_id < 1) {
-+		pr_err("Invalid chunk_id for level 48");
-+		return -EINVAL;
-+	}
-+
-+	if (s->cnk48_count >= NUM_CHUNKS) {
-+		pr_err("Cannot insert a new chunk. The chunk array is full");
-+		return -EINVAL;
-+	}
-+
-+	/*shift each element one step right to make
-+	 *space for the new one
-+	 */
-+	m = (long long)s->cnk48_count * CHUNK_SIZE - 1;
-+	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+		s->N48[m + CHUNK_SIZE] = s->N48[m];
-+		s->P48[m + CHUNK_SIZE] = s->P48[m];
-+	}
-+
-+	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * CHUNK_SIZE;
-+	for (; m < chunk_id * CHUNK_SIZE; m++) {
-+		s->N48[m] = 0;
-+		s->P48[m] = 0;
-+	}
-+
-+	++s->cnk48_count;
-+	return 0;
-+}
-+
-+/* Insert a new chunk to level 56 at chunk_id-1. Note that Chunk ID
-+ * starts from 1, not 0
-+ */
-+static int chunk56_insert(struct sail *s, u16 chunk_id)
-+{
-+	long long m;
-+
-+	if (chunk_id > (s->cnk56_count + 1) || chunk_id < 1) {
-+		pr_err("Invalid chunk_id for level 56");
-+		return -EINVAL;
-+	}
-+
-+	if (s->cnk56_count >= NUM_CHUNKS) {
-+		pr_err("Cannot insert a new chunk. The chunk array is full");
-+		return -EINVAL;
-+	}
-+
-+	/*shift each element one step right to make
-+	 *space for the new one
-+	 */
-+	m = (long long)s->cnk56_count * CHUNK_SIZE - 1;
-+	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+		s->N56[m + CHUNK_SIZE] = s->N56[m];
-+		s->P56[m + CHUNK_SIZE] = s->P56[m];
-+	}
-+
-+	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * CHUNK_SIZE;
-+	for (; m < chunk_id * CHUNK_SIZE; m++) {
-+		s->N56[m] = 0;
-+		s->P56[m] = 0;
-+	}
-+
-+	++s->cnk56_count;
-+	return 0;
 +}
 +
 +/* Insert a new chunk to a level at chunk_id-1. Note that Chunk ID
@@ -1109,7 +961,7 @@ index 0000000..024b064
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = chunk32_insert(s, chunk_id);
++		err = chunk_insert(s->N32, s->P32, &s->cnk32_count, chunk_id);
 +		if (err)
 +			goto error;
 +		/*Step 3*/
@@ -1155,7 +1007,7 @@ index 0000000..024b064
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = chunk40_insert(s, chunk_id);
++		err = chunk_insert(s->N40, s->P40, &s->cnk40_count, chunk_id);
 +		if (err)
 +			goto error;
 +		/*Step 3*/
@@ -1201,7 +1053,7 @@ index 0000000..024b064
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = chunk48_insert(s, chunk_id);
++                err = chunk_insert(s->N48, s->P48, &s->cnk48_count, chunk_id);
 +		if (err)
 +			goto error;
 +		/*Step 3*/
