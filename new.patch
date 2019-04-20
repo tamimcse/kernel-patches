@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..d6a9284 100644
+index 3d49305..b34bbec 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,77 @@
@@ -54,21 +54,21 @@ index 3d49305..d6a9284 100644
 +	u8 __rcu *N24;
 +	u8 __rcu *P24;
 +	struct chunk __rcu *CK24;
-+	u32 __rcu *C24;
++	u16 __rcu *C24;
 +	u32 cnk24_count;/*Number of chunks in level 24*/
 +
 +	/*Level 32*/
 +	u8 __rcu *N32;
 +	u8 __rcu *P32;
 +	struct chunk __rcu *CK32;
-+	u32 __rcu *C32;
++	u16 __rcu *C32;
 +	u32 cnk32_count;/*Number of chunks in level 32*/
 +
 +	/*Level 40*/
 +	u8 __rcu *N40;
 +	u8 __rcu *P40;
 +	struct chunk __rcu *CK40;
-+	u32 __rcu *C40;
++	u16 __rcu *C40;
 +	u32 cnk40_count;/*Number of chunks in level 40*/
 +
 +	/*Level 64*/
@@ -143,7 +143,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..be2c990
+index 0000000..bf94e72
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,1085 @@
@@ -646,7 +646,7 @@ index 0000000..be2c990
 +}
 +
 +/*Calculate the chunk ID for upper level based on CK and C of lower level*/
-+static u16 calc_ckid(struct chunk *ck, u32 ck_idx, u32 ck_off, u32 *c_arr)
++static u16 calc_ckid(struct chunk *ck, u32 ck_idx, u32 ck_off, u16 *c_arr)
 +{
 +	long long i, j;
 +	long long index = 0;
@@ -693,7 +693,7 @@ index 0000000..be2c990
 +
 +/*Update CK and C based on the newly inserted chunk*/
 +static int update_ck_c(struct chunk *ck, u32 ck_idx, u32 ck_off,
-+			   u32 *c, u32 cnk_count, u16 chunk_id)
++			   u16 *c, u32 cnk_count, u16 chunk_id)
 +{
 +	long long i, j;
 +	u64 index = 0;
@@ -761,7 +761,7 @@ index 0000000..be2c990
 +	int i;
 +	u8 *n16, *p16, *n24, *p24, *n32, *p32, *n40, *p40, *n64, *p64;
 +	u16 *c16;
-+	u32 *c24;
++	u16 *c24;
 +	u16 *c32;
 +	u16 *c40;
 +	struct chunk *ck24, *ck32, *ck40;
@@ -1112,7 +1112,7 @@ index 0000000..be2c990
 +{
 +	u8 *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
 +	u16 *c16_old;
-+	u32 *c24_old;
++	u16 *c24_old;
 +	struct chunk *ck24_old;
 +
 +	spin_lock(&s->lock);
@@ -1168,7 +1168,7 @@ index 0000000..be2c990
 +{
 +	u8 *n16, *n24, *n32;
 +	u16 *c16;
-+	u32 *c24;
++	u16 *c24;
 +	struct chunk *ck24;
 +	const u32 key = ntohl(dest);
 +	u8 netdev_index = s->def_nh;
