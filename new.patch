@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..fbeabab8 100644
+index 3d49305..580f17cc 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,91 @@
@@ -102,7 +102,7 @@ index 3d49305..fbeabab8 100644
 +int sail_delete(struct sail *s, u32 key,
 +		u8 prefix_len);
 +int sail_flush(struct sail *s);
-+int sail_lookup(const struct sail *s, const __be32 dest,
++int sail_lookup(const struct sail *s, const u64 dest,
 +		struct net_device **dev);
 +#endif
 +
@@ -157,7 +157,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..1d0865f
+index 0000000..2d9a4d2
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,1094 @@
@@ -1187,13 +1187,11 @@ index 0000000..1d0865f
 +}
 +
 +int sail_lookup(const struct sail *s,
-+		const __be32 dest, struct net_device **dev)
++		const u64 key, struct net_device **dev)
 +{
-+	u8 *n16, *n24, *n32;
-+	u16 *c16;
-+	u16 *c24;
-+	struct chunk *ck24;
-+	const u32 key = ntohl(dest);
++	u8 *n16, *n24, *n32, *n40, *n48, *n56, *n64;
++	u16 *c16, *c24, *c32, *c40, *c48, *c56;
++	struct chunk *ck24, *ck32, *ck40, *ck48, *ck56;
 +	u8 netdev_index = s->def_nh;
 +	u16 n16_idx;/*Index to N16 and C16*/
 +	u64 n24_idx;/*Index to N24*/
@@ -1201,6 +1199,8 @@ index 0000000..1d0865f
 +	u64 ck24_off;/*Offset inside a chunk*/
 +	u64 c24_idx;/*Index to C24*/
 +	u64 n32_idx;/*Index to N32*/
++	u32 ck32_idx;/*Index to CK32*/
++	u64 ck32_off;/*Offset inside a chunk*/
 +	u8 part_idx, part_off;
 +
 +	rcu_read_lock();
@@ -1246,7 +1246,7 @@ index 0000000..1d0865f
 +		goto finish;
 +	}
 +
-+	n32 = rcu_dereference(s->N64);
++	n32 = rcu_dereference(s->N32);
 +	if (likely(n32[n32_idx] != 0))
 +		netdev_index = n32[n32_idx];
 +
@@ -1256,10 +1256,10 @@ index 0000000..1d0865f
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..63ba220 100644
+index 826b14d..e0bb7df 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1157,6 +1157,21 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,6 +1157,25 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  {
  	int err;
  	struct fib6_table *table;
@@ -1276,7 +1276,11 @@ index 826b14d..63ba220 100644
 +                  (__force u64)(ntohs(addr_ipv6[4]));
 +            pr_err("Key=%llu", key);        
 +
-+            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);            
++            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);
++
++            struct net_device *dev;
++            sail_lookup(&rt->fib6_table->sail, 1025, &dev);
++            pr_err("Outgoing port = %s", dev->name);
 +        }
  
  	table = rt->fib6_table;
