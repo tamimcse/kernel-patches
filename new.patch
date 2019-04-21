@@ -157,10 +157,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..2d9a4d2
+index 0000000..2ac72b1
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1094 @@
+@@ -0,0 +1,1095 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1206,7 +1206,7 @@ index 0000000..2d9a4d2
 +	rcu_read_lock();
 +
 +	/*extract 16 bits from LSB*/
-+	n16_idx = key >> 16;
++	n16_idx = key >> 48;
 +	n16 = rcu_dereference(s->N16);
 +	if (unlikely(!n16))
 +		goto finish;
@@ -1220,7 +1220,7 @@ index 0000000..2d9a4d2
 +	c16 = rcu_dereference(s->C16);
 +	if (likely(c16[n16_idx] != 0)) {
 +		ck24_idx = c16[n16_idx] - 1;
-+		ck24_off = (key & 65280) >> 8;
++		ck24_off = (key & 0XFFFFFFFFFFFF) >> 40;
 +		n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
 +	} else {
 +		goto finish;
@@ -1241,7 +1241,8 @@ index 0000000..2d9a4d2
 +		c24 = rcu_dereference(s->C24);
 +		c24_idx = ck24[ck24_idx].start_index[part_idx] +
 +			POPCNT_OFF(ck24[ck24_idx].bitmap[part_idx], part_off);
-+		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++                ck32_off = (key & 0XFFFFFFFFFF) >> 32;
++		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + ck32_off;
 +	} else {
 +		goto finish;
 +	}
