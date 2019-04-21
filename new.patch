@@ -157,10 +157,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..2ac72b1
+index 0000000..37be676
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1095 @@
+@@ -0,0 +1,1122 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1199,8 +1199,13 @@ index 0000000..2ac72b1
 +	u64 ck24_off;/*Offset inside a chunk*/
 +	u64 c24_idx;/*Index to C24*/
 +	u64 n32_idx;/*Index to N32*/
-+	u32 ck32_idx;/*Index to CK32*/
++	u32 ck32_idx;/*Index to CK32*/    
 +	u64 ck32_off;/*Offset inside a chunk*/
++	u64 c32_idx;/*Index to C32*/
++	u64 n40_idx;/*Index to N40*/
++	u32 ck40_idx;/*Index to CK40*/
++	u64 ck40_off;/*Offset inside a chunk*/
++	u64 c40_idx;/*Index to C40*/
 +	u8 part_idx, part_off;
 +
 +	rcu_read_lock();
@@ -1241,8 +1246,9 @@ index 0000000..2ac72b1
 +		c24 = rcu_dereference(s->C24);
 +		c24_idx = ck24[ck24_idx].start_index[part_idx] +
 +			POPCNT_OFF(ck24[ck24_idx].bitmap[part_idx], part_off);
++                ck32_idx = c24[c24_idx] - 1;
 +                ck32_off = (key & 0XFFFFFFFFFF) >> 32;
-+		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + ck32_off;
++		n32_idx = ck32_idx * CHUNK_SIZE + ck32_off;
 +	} else {
 +		goto finish;
 +	}
@@ -1250,6 +1256,27 @@ index 0000000..2ac72b1
 +	n32 = rcu_dereference(s->N32);
 +	if (likely(n32[n32_idx] != 0))
 +		netdev_index = n32[n32_idx];
++        
++	/*Check if there is a longer prefix; if yes, extract 8 bits
++	 * from MSB and calculate index to N32
++	 */
++	ck32 = rcu_dereference(s->CK32);
++	part_idx = ck32_off / 64;
++	part_off = ck32_off % 64;
++	if (likely(ck32[ck32_idx].bitmap[part_idx] & (1ULL << part_off))) {
++		c32 = rcu_dereference(s->C32);
++		c32_idx = ck32[ck32_idx].start_index[part_idx] +
++			POPCNT_OFF(ck32[ck32_idx].bitmap[part_idx], part_off);
++                ck40_idx = c32[c32_idx] - 1;
++                ck40_off = (key & 0XFFFFFFFF) >> 24;
++		n40_idx = ck40_idx * CHUNK_SIZE + ck40_off;
++	} else {
++		goto finish;
++	}
++        
++	n40 = rcu_dereference(s->N40);
++	if (likely(n40[n40_idx] != 0))
++		netdev_index = n40[n40_idx];
 +
 +finish:
 +	*dev = s->netdevs[netdev_index];
