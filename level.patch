@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..3fe38ca 100644
+index 3d49305..0a3da0a 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,102 @@
+@@ -40,6 +40,63 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -59,47 +59,8 @@ index 3d49305..3fe38ca 100644
 +	u8 __rcu *P16;
 +	u16 __rcu *C16;
 +        
++        /*level 24, 32, 40, 48, 56, 64*/
 +        struct level arr[NUM_LEVELS];
-+
-+	/*Level 24*/
-+	u8 __rcu *N24;
-+	u8 __rcu *P24;
-+	struct chunk __rcu *CK24;
-+	u16 __rcu *C24;
-+	u32 cnk24_count;/*Number of chunks in level 24*/
-+
-+	/*Level 32*/
-+	u8 __rcu *N32;
-+	u8 __rcu *P32;
-+	struct chunk __rcu *CK32;
-+	u16 __rcu *C32;
-+	u32 cnk32_count;/*Number of chunks in level 32*/
-+
-+	/*Level 40*/
-+	u8 __rcu *N40;
-+	u8 __rcu *P40;
-+	struct chunk __rcu *CK40;
-+	u16 __rcu *C40;
-+	u32 cnk40_count;/*Number of chunks in level 40*/
-+        
-+	/*Level 48*/
-+	u8 __rcu *N48;
-+	u8 __rcu *P48;
-+	struct chunk __rcu *CK48;
-+	u16 __rcu *C48;
-+	u32 cnk48_count;/*Number of chunks in level 48*/
-+        
-+	/*Level 56*/
-+	u8 __rcu *N56;
-+	u8 __rcu *P56;
-+	struct chunk __rcu *CK56;
-+	u16 __rcu *C56;
-+	u32 cnk56_count;/*Number of chunks in level 56*/
-+
-+	/*Level 64*/
-+	u8 __rcu *N64;
-+	u8 __rcu *P64;
-+	u32 cnk64_count;/*Number of chunks in level 32*/
 +
 +	/*Index to this array is stored in N16, N24 and N32*/
 +	struct net_device	*netdevs[NETDEV_COUNT_MAX];
@@ -121,7 +82,7 @@ index 3d49305..3fe38ca 100644
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +438,10 @@ struct fib6_table {
+@@ -342,6 +399,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -168,10 +129,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..e985c4c
+index 0000000..9f4a43c
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,804 @@
+@@ -0,0 +1,785 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -179,26 +140,6 @@ index 0000000..e985c4c
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
 + *   2 of the License, or (at your option) any later version.
-+ *
-+ *
-+ * This is SAIL_L based routing table lookup which was initially proposed in:
-+ *
-+ * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
-+ * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
-+ * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
-+ * ACM, 2014.
-+ *
-+ * It however deviates from the SAIL_L in three ways:
-+ *
-+ * 1. It pushes all the solid nodes in level 1~15 to level 16 whereas SAIL_L
-+ * pushes them to either level 16, level 24 or level 32.
-+ *
-+ * 2. It pushes all the solid nodes in level 17~23 to level 24 whereas SAIL_L
-+ * pushes them to either level 24 or level 32.
-+ *
-+ * 3. It adds a bitmap array, CK24 in addition to C24. This reduces the memory
-+ * memory requirement of original C24 from 17.08 MB to 110KB for our example
-+ * routing table.
 + */
 +
 +#include <net/ip6_fib.h>
@@ -206,14 +147,17 @@ index 0000000..e985c4c
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Length of C24.*/
++/*Length of C array in level 24-64.*/
 +#define C_SIZE 65536
 +
 +/*chunk size is 2^8*/
-+#define CHUNK_SIZE 256
++#define CNK_SIZE 256
 +
-+/*Total number of chunks preallocated for level 24 and 32*/
++/*Total number of chunks preallocated for level 24-64*/
 +#define NUM_CHUNKS 16384
++
++/*memory preallocated for N and P array in level 24-64*/
++#define ARR_SIZE NUM_CHUNKS * CNK_SIZE
 +
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
@@ -271,15 +215,15 @@ index 0000000..e985c4c
 +	/*shift each element one step right to make
 +	 *space for the new one
 +	 */
-+	m = (long long)(*cnk_count) * CHUNK_SIZE - 1;
-+	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+		N[m + CHUNK_SIZE] = N[m];
-+		P[m + CHUNK_SIZE] = P[m];
++	m = (long long)(*cnk_count) * CNK_SIZE - 1;
++	for (; m >= (chunk_id - 1) * CNK_SIZE; m--) {
++		N[m + CNK_SIZE] = N[m];
++		P[m + CNK_SIZE] = P[m];
 +	}
 +
 +	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * CHUNK_SIZE;
-+	for (; m < chunk_id * CHUNK_SIZE; m++) {
++	m = (chunk_id - 1) * CNK_SIZE;
++	for (; m < chunk_id * CNK_SIZE; m++) {
 +		N[m] = 0;
 +		P[m] = 0;
 +	}
@@ -316,17 +260,17 @@ index 0000000..e985c4c
 +
 +	if (chunk_id < *cnk_count) {
 +		/*shift each chunk one step left*/
-+		m = (long long)chunk_id * CHUNK_SIZE;
-+		end_idx = (*cnk_count) * CHUNK_SIZE - 1;
++		m = (long long)chunk_id * CNK_SIZE;
++		end_idx = (*cnk_count) * CNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
-+			N[m - CHUNK_SIZE] = N[m];
-+			P[m - CHUNK_SIZE] = P[m];
++			N[m - CNK_SIZE] = N[m];
++			P[m - CNK_SIZE] = P[m];
 +		}
 +	}
 +
 +	/*Reset the the last chunk*/
-+	end_idx = (*cnk_count) * CHUNK_SIZE - 1;
-+	m = (*cnk_count - 1) * CHUNK_SIZE;
++	end_idx = (*cnk_count) * CNK_SIZE - 1;
++	m = (*cnk_count - 1) * CNK_SIZE;
 +	for (; m <= end_idx; m++) {
 +		N[m] = 0;
 +		P[m] = 0;
@@ -448,8 +392,8 @@ index 0000000..e985c4c
 +		return -EINVAL;
 +	}
 +
-+	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
-+	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	start_index = (long long)(chunk_id - 1) * CNK_SIZE;
++	end_index = (long long)chunk_id * CNK_SIZE - 1;
 +	for (i = start_index; i <= end_index; i++) {
 +		/*The chunk is being used*/
 +		if (nh[i] > 0)
@@ -619,10 +563,8 @@ index 0000000..e985c4c
 +		RCU_INIT_POINTER(s->C16, c16);
 +                
 +                for (j = 0, k = 24; j < NUM_LEVELS; j++, k += 8) {
-+                    n = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n),
-+                                  GFP_ATOMIC);
-+                    p = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p),
-+                                  GFP_ATOMIC);
++                    n = kcalloc(ARR_SIZE, sizeof(*n), GFP_ATOMIC);
++                    p = kcalloc(ARR_SIZE, sizeof(*p), GFP_ATOMIC);
 +                    ck = kcalloc(NUM_CHUNKS, sizeof(*ck), GFP_ATOMIC);
 +                    c = kcalloc(C_SIZE, sizeof(*c), GFP_ATOMIC);
 +                    
@@ -645,7 +587,7 @@ index 0000000..e985c4c
 +//		synchronize_rcu();
 +	}
 +
-+	/*Eextract 16 bits from LSB.*/
++	/*Eextract 16 bits from MSB.*/
 +	n16_idx = key >> 48;
 +
 +	if (prefix_len <= 16) {
@@ -661,7 +603,7 @@ index 0000000..e985c4c
 +		goto finish;
 +	}
 +
-+	/* The length of the prefix is 21~32. So need to check if there is a
++	/* The length of the prefix is 21~64. So need to check if there is a
 +	 * chunk for this prefix in level 24. C16[..] = 0 indicates that there
 +	 * is no chunk, so need to insert one. The insertion works as
 +	 * following:
@@ -685,8 +627,8 @@ index 0000000..e985c4c
 +			goto error;
 +	}
 +
-+	/*Extract bit 17~24 and calculate index to level 24*/
-+	n_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 0XFFFFFFFFFFFF) >> 40);
++	/*Extract bit 17~24 from MSB and calculate index to level 24*/
++	n_idx = (s->C16[n16_idx] - 1) * CNK_SIZE + ((key & 0XFFFFFFFFFFFF) >> 40);
 +	ck_idx = s->C16[n16_idx] - 1;
 +	ck_off = (key & 0XFFFFFFFFFFFF) >> 40;
 +
@@ -724,7 +666,7 @@ index 0000000..e985c4c
 +
 +            c_idx = calc_c_idx(s->arr[j-1].CK[ck_idx], ck_off);
 +            /*Extract 8 bit from MSB and calculate index to level 32*/
-+            n_idx = (s->arr[j-1].C[c_idx] - 1) * CHUNK_SIZE + ((key & mask) >> (64 - s->arr[j].prefix_len));
++            n_idx = (s->arr[j-1].C[c_idx] - 1) * CNK_SIZE + ((key & mask) >> (64 - s->arr[j].prefix_len));
 +            ck_idx = s->arr[j-1].C[c_idx] - 1;
 +            ck_off = (key & mask) >> (64 - s->arr[j].prefix_len);
 +
@@ -790,7 +732,7 @@ index 0000000..e985c4c
 +
 +	ck_idx = s->C16[n16_idx] - 1;
 +	ck_off = ((key & 0XFFFFFFFFFFFF) >> 40);/*Extract bit 17~24 from the prefix*/
-+	n_idx = ck_idx * CHUNK_SIZE + ck_off;
++	n_idx = ck_idx * CNK_SIZE + ck_off;
 +
 +	if (prefix_len <= 24) {
 +		/*Level pushing*/
@@ -822,7 +764,7 @@ index 0000000..e985c4c
 +            ck_idx = ck_id - 1;
 +            ck_off = (key & mask) >> (64 - s->arr[j].prefix_len);
 +            /*Extract 8 bit from MSB and calculate index to level 32*/
-+            n_idx = ck_idx * CHUNK_SIZE + ck_off;
++            n_idx = ck_idx * CNK_SIZE + ck_off;
 +
 +            if (prefix_len <= s->arr[j].prefix_len) {
 +                    /*Level pushing*/
@@ -938,7 +880,7 @@ index 0000000..e985c4c
 +	if (likely(c16[n16_idx] != 0)) {
 +		ck_idx = c16[n16_idx] - 1;
 +		ck_off = (key & 0XFFFFFFFFFFFF) >> 40;
-+		n_idx = ck_idx * CHUNK_SIZE + ck_off;
++		n_idx = ck_idx * CNK_SIZE + ck_off;
 +	} else {
 +		goto finish;
 +	}
@@ -961,7 +903,7 @@ index 0000000..e985c4c
 +                            POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
 +                    ck_idx = c[c_idx] - 1;
 +                    ck_off = (key & mask) >> (64 - s->arr[j + 1].prefix_len);
-+                    n_idx = ck_idx * CHUNK_SIZE + ck_off;
++                    n_idx = ck_idx * CNK_SIZE + ck_off;
 +            } else {
 +                    goto finish;
 +            }
