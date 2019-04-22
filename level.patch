@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..9c7f5f4 100644
+index 3d49305..3fe38ca 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,102 @@
@@ -110,7 +110,7 @@ index 3d49305..9c7f5f4 100644
 +
 +int sail_insert(struct sail *s, u64 key,
 +		u8 prefix_len, struct net_device *dev);
-+int sail_delete(struct sail *s, u32 key,
++int sail_delete(struct sail *s, u64 key,
 +		u8 prefix_len);
 +int sail_flush(struct sail *s);
 +int sail_lookup(const struct sail *s, const u64 dest,
@@ -168,10 +168,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..07452fd
+index 0000000..b6e2185
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,872 @@
+@@ -0,0 +1,875 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -508,8 +508,8 @@ index 0000000..07452fd
 +	return true;
 +}
 +
-+ /* Check if a chunk in level 24 is being unused*/
-+static bool is_CK24_N24_chunk_unused(u8 *nh, struct chunk *ck, u16 chunk_id)
++ /* Check if a chunk is unused*/
++static bool is_chunk_unused(u8 *nh, struct chunk *ck, u16 chunk_id)
 +{
 +	long long i;
 +	long long start_index, end_index;
@@ -820,12 +820,15 @@ index 0000000..07452fd
 +	return err;
 +}
 +
-+int sail_delete(struct sail *s, u32 key, u8 prefix_len)
++int sail_delete(struct sail *s, u64 key, u8 prefix_len)
 +{
 +	int i;
 +	u32 n16_idx;/*Index to N16, P16 and C16*/
 +	u64 n24_idx;/*Index to level N24 and P24*/
 +	u16 ck24_idx;/*Index to CK24*/
++        u16 ck_idx;
++        u64 ck_off;
++        u16 n_idx;
 +	u64 ck24_off;/*Offset inside chunk in level 24*/
 +	u64 n32_idx;/*Index to level N32 and P32*/
 +	u32 consecutive_leafs;
@@ -840,7 +843,7 @@ index 0000000..07452fd
 +		goto error;
 +
 +	/*Eextract 16 bits from LSB.*/
-+	n16_idx = key >> 16;
++	n16_idx = key >> 48;
 +
 +	if (prefix_len <= 16) {
 +		/*Level pushing*/
@@ -859,21 +862,21 @@ index 0000000..07452fd
 +	if (s->C16[n16_idx] == 0)
 +		goto error;
 +
-+	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;/*Extract bit 17~24 from the prefix*/
-+	n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
++	ck_idx = s->C16[n16_idx] - 1;
++	ck_off = ((key & 0XFFFFFFFFFFFF) >> 40);/*Extract bit 17~24 from the prefix*/
++	n_idx = ck_idx * CHUNK_SIZE + ck_off;
 +
 +	if (prefix_len <= 24) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (24 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P24[n24_idx + i] != prefix_len)
++                        if (s->arr[0].P[n_idx + i] > prefix_len)    
 +				continue;
-+			s->N24[n24_idx + i] = 0;
-+			s->P24[n24_idx + i] = 0;
++			s->arr[0].N[n_idx + i] = 0;
++			s->arr[0].P[n_idx + i] = 0;
 +		}
-+		if (is_CK24_N24_chunk_unused(s->N24, &s->CK24[ck24_idx],
++		if (is_chunk_unused(s->arr[0].N, &s->arr[0].CK[ck_idx],
 +					     s->C16[n16_idx])) {
 +			chunk24_delete(s, s->C16[n16_idx]);
 +			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
@@ -882,34 +885,34 @@ index 0000000..07452fd
 +		goto finish;
 +	}
 +
-+	part_idx = ck24_off / 64;
-+	part_off = ck24_off % 64;
-+	/* The prefix_len is 25~32. but no chunk for the prefix */
-+	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)))
-+		goto error;
-+
-+	chunkid_level32 = s->C24[calc_c_idx(s->CK24[ck24_idx], ck24_off)];
-+
-+	/*Extract 8 bit from MSB and calculate index to level 32*/
-+	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
-+
-+	if (prefix_len <= 32) {
-+		/*Level pushing*/
-+		consecutive_leafs = 1U << (32 - prefix_len);
-+
-+		for (i = 0; i < consecutive_leafs; i++) {
-+			/*Prefix len doesn't match*/
-+			if (s->P64[n32_idx + i] != prefix_len)
-+				continue;
-+			s->N64[n32_idx + i] = 0;
-+			s->P64[n32_idx + i] = 0;
-+		}
-+		if (is_N32_chunk_unused(s->N64, chunkid_level32)) {
-+			chunk32_delete(s, chunkid_level32);
-+			C24_remove_chunkid(s, ck24_idx, ck24_off);
-+		}
-+		goto finish;
-+	}
++//	part_idx = ck24_off / 64;
++//	part_off = ck24_off % 64;
++//	/* The prefix_len is 25~32. but no chunk for the prefix */
++//	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)))
++//		goto error;
++//
++//	chunkid_level32 = s->C24[calc_c_idx(s->CK24[ck24_idx], ck24_off)];
++//
++//	/*Extract 8 bit from MSB and calculate index to level 32*/
++//	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
++//
++//	if (prefix_len <= 32) {
++//		/*Level pushing*/
++//		consecutive_leafs = 1U << (32 - prefix_len);
++//
++//		for (i = 0; i < consecutive_leafs; i++) {
++//			/*Prefix len doesn't match*/
++//			if (s->P64[n32_idx + i] != prefix_len)
++//				continue;
++//			s->N64[n32_idx + i] = 0;
++//			s->P64[n32_idx + i] = 0;
++//		}
++//		if (is_N32_chunk_unused(s->N64, chunkid_level32)) {
++//			chunk32_delete(s, chunkid_level32);
++//			C24_remove_chunkid(s, ck24_idx, ck24_off);
++//		}
++//		goto finish;
++//	}
 +
 +/*The prefix was not found*/
 +error:
@@ -1045,10 +1048,10 @@ index 0000000..07452fd
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..f6775e9 100644
+index 826b14d..a5bee300 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1157,6 +1157,26 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,6 +1157,27 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  {
  	int err;
  	struct fib6_table *table;
@@ -1067,9 +1070,10 @@ index 826b14d..f6775e9 100644
 +            pr_err("Key=%llu", key);        
 +
 +            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);
++            if (key % 2 == 0)
++                sail_delete(&rt->fib6_table->sail, key, rt->fib6_dst.plen);
 +            
 +            sail_lookup(&rt->fib6_table->sail, 1025, &dev);
-+            sail_flush(&rt->fib6_table->sail);
 +            pr_err("Outgoing port = %s", dev->name);
 +        }
  
