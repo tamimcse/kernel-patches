@@ -129,10 +129,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..9f4a43c
+index 0000000..4ac2d13
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,785 @@
+@@ -0,0 +1,786 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -521,7 +521,7 @@ index 0000000..9f4a43c
 +{
 +	int i, j;
 +        u8 k;
-+        u64 mask;
++        u8 bitshifts;
 +	u8 *n16, *p16, *n, *p;
 +	u16 *c16, *c;
 +	struct chunk *ck;
@@ -628,7 +628,7 @@ index 0000000..9f4a43c
 +	}
 +
 +	/*Extract bit 17~24 from MSB and calculate index to level 24*/
-+	n_idx = (s->C16[n16_idx] - 1) * CNK_SIZE + ((key & 0XFFFFFFFFFFFF) >> 40);
++	n_idx = (s->C16[n16_idx] - 1) * CNK_SIZE + ((key >> 40) & 0XFF);
 +	ck_idx = s->C16[n16_idx] - 1;
 +	ck_off = (key & 0XFFFFFFFFFFFF) >> 40;
 +
@@ -645,9 +645,10 @@ index 0000000..9f4a43c
 +		goto finish;
 +	}
 +        
-+        for (j = 1, mask = 0XFFFFFFFFFF; j < NUM_LEVELS; j++, mask = mask >> 8) {
-+            /* The length of the prefix is 25~32, but there is no chunk for
-+             * this prefix in level 32. So do the same as before
++        /*bitshifts indicate how many bit shifting is needed*/
++        for (j = 1, bitshifts = 32; j < NUM_LEVELS; j++, bitshifts -= 8) {
++            /* The length of the prefix is 25-64, but there is no chunk for
++             * this prefix in the next level. So do the same as before
 +             */
 +            part_idx = ck_off / 64;
 +            part_off = ck_off % 64;
@@ -666,9 +667,9 @@ index 0000000..9f4a43c
 +
 +            c_idx = calc_c_idx(s->arr[j-1].CK[ck_idx], ck_off);
 +            /*Extract 8 bit from MSB and calculate index to level 32*/
-+            n_idx = (s->arr[j-1].C[c_idx] - 1) * CNK_SIZE + ((key & mask) >> (64 - s->arr[j].prefix_len));
++            n_idx = (s->arr[j-1].C[c_idx] - 1) * CNK_SIZE + ((key >> bitshifts) && 0XFF);
 +            ck_idx = s->arr[j-1].C[c_idx] - 1;
-+            ck_off = (key & mask) >> (64 - s->arr[j].prefix_len);
++            ck_off = (key >> bitshifts) && 0XFF;
 +
 +            if (prefix_len <= s->arr[j].prefix_len) {
 +                    /*All the leafs in level 25~32 will be stored in level 32.*/
