@@ -168,10 +168,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..39638f3
+index 0000000..2e925fb
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,858 @@
+@@ -0,0 +1,861 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -442,7 +442,7 @@ index 0000000..39638f3
 +	return 0;
 +}
 +
-+static int C24_remove_chunkid(struct sail *s, u16 cnk_idx, u64 cnk_off)
++static int C24_remove_chunkid(u16 *C, struct chunk *CK, u16 cnk_idx, u64 cnk_off)
 +{
 +	long long i;
 +	bool found = false;
@@ -452,42 +452,42 @@ index 0000000..39638f3
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	chunk_id = s->C24[calc_c_idx(s->CK24[cnk_idx], cnk_off)];
-+	s->CK24[cnk_idx].bitmap[part_idx] &= ~(1ULL << part_off);
++	chunk_id = C[calc_c_idx(CK[cnk_idx], cnk_off)];
++	CK[cnk_idx].bitmap[part_idx] &= ~(1ULL << part_off);
 +
 +	for (i = 0; i < C_SIZE; i++) {
-+		if (s->C24[i] == chunk_id)
++		if (C[i] == chunk_id)
 +			found = true;
-+		else if (found && s->C24[i] > 0)
-+			s->C24[i - 1] = s->C24[i];
-+		else if (found && !s->C24[i])
++		else if (found && C[i] > 0)
++			C[i - 1] = C[i];
++		else if (found && !C[i])
 +			break;
 +	}
 +
 +	return 0;
 +}
-+
-+ /* Check if a chunk in level 32 is being unused */
-+static bool is_N32_chunk_unused(u8 *nh, u32 chunk_id)
-+{
-+	long long i;
-+	long long start_index, end_index;
-+
-+	if (chunk_id < 1) {
-+		pr_err("Invalid chunk ID");
-+		return -EINVAL;
-+	}
-+
-+	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
-+	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
-+	for (i = start_index; i <= end_index; i++) {
-+		/*The chunk is being used*/
-+		if (nh[i] > 0)
-+			return false;
-+	}
-+
-+	return true;
-+}
++//
++// /* Check if a chunk in level 32 is being unused */
++//static bool is_N32_chunk_unused(u8 *nh, u32 chunk_id)
++//{
++//	long long i;
++//	long long start_index, end_index;
++//
++//	if (chunk_id < 1) {
++//		pr_err("Invalid chunk ID");
++//		return -EINVAL;
++//	}
++//
++//	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++//	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++//	for (i = start_index; i <= end_index; i++) {
++//		/*The chunk is being used*/
++//		if (nh[i] > 0)
++//			return false;
++//	}
++//
++//	return true;
++//}
 +
 + /* Check if a chunk is unused*/
 +static bool is_chunk_unused(u8 *nh, struct chunk *ck, u16 chunk_id)
@@ -803,7 +803,8 @@ index 0000000..39638f3
 +
 +int sail_delete(struct sail *s, u64 key, u8 prefix_len)
 +{
-+	int i;
++	int i, j;
++        u64 mask;
 +	u32 n16_idx;/*Index to N16, P16 and C16*/
 +	u64 n24_idx;/*Index to level N24 and P24*/
 +	u16 ck24_idx;/*Index to CK24*/
@@ -814,7 +815,7 @@ index 0000000..39638f3
 +	u64 n32_idx;/*Index to level N32 and P32*/
 +	u32 consecutive_leafs;
 +	int err = 0;
-+	u32 chunkid_level32;
++	u32 ck_id;
 +	u8 part_idx, part_off;
 +
 +	spin_lock(&s->lock);
@@ -859,43 +860,45 @@ index 0000000..39638f3
 +		}
 +		if (is_chunk_unused(s->arr[0].N, &s->arr[0].CK[ck_idx],
 +					     s->C16[n16_idx])) {
-+//			chunk24_delete(s, s->C16[n16_idx]);
 +                        chunk_delete(s->arr[0].N, s->arr[0].P, s->arr[0].CK, &s->arr[0].cnk_count, s->C16[n16_idx]);
-+                        
 +			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
 +					   s->C16[n16_idx]);
 +		}
 +		goto finish;
 +	}
++        
++        for (j = 1, mask = 0XFFFFFFFFFF; j < NUM_LEVELS; j++, mask = mask >> 8) {
++            part_idx = ck_off / 64;
++            part_off = ck_off % 64;
++            /* The prefix_len is 25~32. but no chunk for the prefix */
++            if (!(s->arr[j - 1].CK[ck_idx].bitmap[part_idx] & (1ULL << part_off)))
++                    goto error;
 +
-+//	part_idx = ck24_off / 64;
-+//	part_off = ck24_off % 64;
-+//	/* The prefix_len is 25~32. but no chunk for the prefix */
-+//	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)))
-+//		goto error;
-+//
-+//	chunkid_level32 = s->C24[calc_c_idx(s->CK24[ck24_idx], ck24_off)];
-+//
-+//	/*Extract 8 bit from MSB and calculate index to level 32*/
-+//	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
-+//
-+//	if (prefix_len <= 32) {
-+//		/*Level pushing*/
-+//		consecutive_leafs = 1U << (32 - prefix_len);
-+//
-+//		for (i = 0; i < consecutive_leafs; i++) {
-+//			/*Prefix len doesn't match*/
-+//			if (s->P64[n32_idx + i] != prefix_len)
-+//				continue;
-+//			s->N64[n32_idx + i] = 0;
-+//			s->P64[n32_idx + i] = 0;
-+//		}
-+//		if (is_N32_chunk_unused(s->N64, chunkid_level32)) {
-+//			chunk32_delete(s, chunkid_level32);
-+//			C24_remove_chunkid(s, ck24_idx, ck24_off);
-+//		}
-+//		goto finish;
-+//	}
++            ck_id = s->arr[j - 1].C[calc_c_idx(s->arr[j - 1].CK[ck_idx], ck_off)];
++            ck_idx = ck_id - 1;
++            ck_off = (key & mask) >> (64 - s->arr[j].prefix_len);
++            /*Extract 8 bit from MSB and calculate index to level 32*/
++            n_idx = ck_idx * CHUNK_SIZE + ck_off;
++
++            if (prefix_len <= s->arr[j].prefix_len) {
++                    /*Level pushing*/
++                    consecutive_leafs = 1U << (s->arr[j].prefix_len - prefix_len);
++
++                    for (i = 0; i < consecutive_leafs; i++) {
++                            /*Prefix len doesn't match*/
++                            if (s->arr[j].P[n_idx + i] != prefix_len)
++                                    continue;
++                            s->arr[j].N[n_idx + i] = 0;
++                            s->arr[j].P[n_idx + i] = 0;
++                    }
++                    if (is_chunk_unused(s->arr[j].N, &s->arr[j].CK[ck_idx], ck_id)) {
++//                            chunk32_delete(s, ck_id);
++                            chunk_delete(s->arr[j].N, s->arr[j].P, s->arr[j].CK, &s->arr[j].cnk_count, ck_id);
++                            C24_remove_chunkid(s->arr[j-1].C, s->arr[j-1].CK, ck_idx, ck_off);
++                    }
++                    goto finish;
++            }    
++        }
 +
 +/*The prefix was not found*/
 +error:
