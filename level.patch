@@ -168,10 +168,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..04fb7c3
+index 0000000..07452fd
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,874 @@
+@@ -0,0 +1,872 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -921,10 +921,10 @@ index 0000000..04fb7c3
 +
 +int sail_flush(struct sail *s)
 +{
-+	u8 *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
++        int i;
++	u8 *n16_old, *p16_old;
 +	u16 *c16_old;
-+	u16 *c24_old;
-+	struct chunk *ck24_old;
++        struct level arr[NUM_LEVELS];
 +
 +	spin_lock(&s->lock);
 +
@@ -932,29 +932,27 @@ index 0000000..04fb7c3
 +	n16_old = s->N16;
 +	p16_old = s->P16;
 +	c16_old = s->C16;
-+	n24_old = s->N24;
-+	p24_old = s->P24;
-+	c24_old = s->C24;
-+	ck24_old = s->CK24;
-+	n32_old = s->N64;
-+	p32_old = s->P64;
++        for (i = 0; i < NUM_LEVELS; i++) {
++            arr[i].N = s->arr[i].N;
++            arr[i].P = s->arr[i].P;
++            arr[i].CK = s->arr[i].CK;
++            arr[i].C = s->arr[i].C;
++        }
 +
 +	/*Set the counter before the chunk are deleted*/
-+	s->cnk64_count = 0;
-+	s->cnk24_count = 0;
++        for (i = 0; i < NUM_LEVELS; i++)
++            s->arr[i].cnk_count = 0;
 +
-+	/*Set the pointers to NULL*/
++	/*Set the pointers to NULL*/                    
 +	rcu_assign_pointer(s->N16, NULL);
 +	rcu_assign_pointer(s->P16, NULL);
 +	rcu_assign_pointer(s->C16, NULL);
-+
-+	rcu_assign_pointer(s->N24, NULL);
-+	rcu_assign_pointer(s->P24, NULL);
-+	rcu_assign_pointer(s->C24, NULL);
-+	rcu_assign_pointer(s->CK24, NULL);
-+
-+	rcu_assign_pointer(s->N64, NULL);
-+	rcu_assign_pointer(s->P64, NULL);
++        for (i = 0; i < NUM_LEVELS; i++) {
++            rcu_assign_pointer(s->arr[i].N, NULL);
++            rcu_assign_pointer(s->arr[i].P, NULL);
++            rcu_assign_pointer(s->arr[i].CK, NULL);
++            rcu_assign_pointer(s->arr[i].C, NULL);
++        }
 +
 +	/* Wait for all references to be released */
 +	synchronize_rcu();
@@ -963,12 +961,12 @@ index 0000000..04fb7c3
 +	kfree(n16_old);
 +	kfree(p16_old);
 +	kfree(c16_old);
-+	kfree(n24_old);
-+	kfree(p24_old);
-+	kfree(c24_old);
-+	kfree(ck24_old);
-+	kfree(n32_old);
-+	kfree(p32_old);
++        for (i = 0; i < NUM_LEVELS; i++) {
++            kfree(arr[i].N);
++            kfree(arr[i].P);
++            kfree(arr[i].CK);
++            kfree(arr[i].C);
++        }
 +
 +	spin_unlock(&s->lock);
 +	return 0;
@@ -1047,10 +1045,10 @@ index 0000000..04fb7c3
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..5db6c57 100644
+index 826b14d..f6775e9 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1157,6 +1157,25 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,6 +1157,26 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  {
  	int err;
  	struct fib6_table *table;
@@ -1071,6 +1069,7 @@ index 826b14d..5db6c57 100644
 +            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);
 +            
 +            sail_lookup(&rt->fib6_table->sail, 1025, &dev);
++            sail_flush(&rt->fib6_table->sail);
 +            pr_err("Outgoing port = %s", dev->name);
 +        }
  
