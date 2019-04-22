@@ -168,10 +168,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..b6e2185
+index 0000000..39638f3
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,875 @@
+@@ -0,0 +1,858 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -304,69 +304,50 @@ index 0000000..b6e2185
 +	return 0;
 +}
 +
-+static int N24_delete(struct sail *s, u16 chunk_id)
++static int chunk_delete(u8 *N, u8 *P, struct chunk *CK, u32 *cnk_count, u16 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
 +
-+	if (chunk_id > s->cnk24_count) {
-+		pr_err("Invalid chunk_id to level 26");
++	if (chunk_id > *cnk_count) {
++		pr_err("Invalid chunk_id");
 +		return -EINVAL;
 +	}
 +
-+	if (chunk_id < s->cnk24_count) {
++	if (chunk_id < *cnk_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id * CHUNK_SIZE;
-+		end_idx = s->cnk24_count * CHUNK_SIZE - 1;
++		end_idx = (*cnk_count) * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
-+			s->N24[m - CHUNK_SIZE] = s->N24[m];
-+			s->P24[m - CHUNK_SIZE] = s->P24[m];
++			N[m - CHUNK_SIZE] = N[m];
++			P[m - CHUNK_SIZE] = P[m];
 +		}
 +	}
 +
 +	/*Reset the the last chunk*/
-+	end_idx = s->cnk24_count * CHUNK_SIZE - 1;
-+	m = (s->cnk24_count - 1) * CHUNK_SIZE;
++	end_idx = (*cnk_count) * CHUNK_SIZE - 1;
++	m = (*cnk_count - 1) * CHUNK_SIZE;
 +	for (; m <= end_idx; m++) {
-+		s->N24[m] = 0;
-+		s->P24[m] = 0;
++		N[m] = 0;
++		P[m] = 0;
 +	}
 +
-+	return 0;
-+}
-+
-+static int CK24_delete(struct sail *s, u16 chunk_id)
-+{
-+	long long m;
-+
-+	if (chunk_id > s->cnk24_count) {
-+		pr_err("Invalid chunk_id to level 24");
-+		return -EINVAL;
-+	}
-+
-+	if (chunk_id < s->cnk24_count) {
++	if (chunk_id < *cnk_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id;
-+		for (; m <= s->cnk24_count - 1; m++)
-+			s->CK24[m - 1] = s->CK24[m];
++		for (; m <= *cnk_count - 1; m++)
++			CK[m - 1] = CK[m];
 +	}
 +
 +	/*Reset the the last chunk*/
 +	for (m = 0; m < 4; m++) {
-+		s->CK24[s->cnk24_count - 1].start_index[m] = 0;
-+		s->CK24[s->cnk24_count - 1].bitmap[m] = 0;
++		CK[*cnk_count - 1].start_index[m] = 0;
++		CK[*cnk_count - 1].bitmap[m] = 0;
 +	}
-+
++        *cnk_count -= 1;
 +	return 0;
 +}
 +
-+static int chunk24_delete(struct sail *s, u16 chunk_id)
-+{
-+	N24_delete(s, chunk_id);
-+	CK24_delete(s, chunk_id);
-+	--s->cnk24_count;
-+	return 0;
-+}
 +
 +static int chunk32_delete(struct sail *s, u32 chunk_id)
 +{
@@ -878,7 +859,9 @@ index 0000000..b6e2185
 +		}
 +		if (is_chunk_unused(s->arr[0].N, &s->arr[0].CK[ck_idx],
 +					     s->C16[n16_idx])) {
-+			chunk24_delete(s, s->C16[n16_idx]);
++//			chunk24_delete(s, s->C16[n16_idx]);
++                        chunk_delete(s->arr[0].N, s->arr[0].P, s->arr[0].CK, &s->arr[0].cnk_count, s->C16[n16_idx]);
++                        
 +			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
 +					   s->C16[n16_idx]);
 +		}
