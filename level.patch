@@ -915,13 +915,15 @@ index 0000000..53c09aa
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..cde61af 100644
+index 826b14d..d03a51c 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1157,11 +1157,30 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,11 +1157,32 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  {
  	int err;
  	struct fib6_table *table;
+-
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        u64 key;
 +        struct net_device *dev;
 +        __be16 *addr_ipv6 =  rt->fib6_dst.addr.in6_u.u6_addr16;
@@ -938,28 +940,31 @@ index 826b14d..cde61af 100644
 +
 +            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);            
 +        }
- 
++#endif
  	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
  	err = fib6_add(&table->tb6_root, rt, info, extack);
  	spin_unlock_bh(&table->tb6_lock);
-+        
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        sail_lookup(&rt->fib6_table->sail, 1025, &dev);
 +        pr_err("Outgoing port = %s", dev->name);
++#endif
  
  	return err;
  }
-@@ -3179,11 +3198,28 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+@@ -3179,11 +3200,29 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
  	struct net *net = info->nl_net;
  	struct fib6_table *table;
  	int err;
+-
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        u64 key;
 +        __be16 *addr_ipv6 =  rt->fib6_dst.addr.in6_u.u6_addr16;
 +
 +        if (rt->fib6_dst.plen <= 64) {
 +            pr_err("Deleting %pI6c/%d", &rt->fib6_dst.addr, rt->fib6_dst.plen);
 +//            pr_err("addr[0]=%d addr[1]=%d addr[2]=%d addr[3]=%d", ntohs(addr_ipv6[0]), ntohs(addr_ipv6[1]), ntohs(addr_ipv6[2]), ntohs(addr_ipv6[3]));
- 
++
 +            key = ((__force u64)(ntohs(addr_ipv6[0])) << 48) |
 +                  ((__force u64)(ntohs(addr_ipv6[1])) << 32) |
 +                  ((__force u64)(ntohs(addr_ipv6[2])) << 16) |
@@ -968,7 +973,7 @@ index 826b14d..cde61af 100644
 +
 +            sail_delete(&rt->fib6_table->sail, key, rt->fib6_dst.plen);
 +        }
-+
++#endif
 +	table = rt->fib6_table;
 +        
  	if (rt == net->ipv6.fib6_null_entry) {
