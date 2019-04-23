@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..0a3da0a 100644
+index 3d49305..c260fa5 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,63 @@
+@@ -40,6 +40,60 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -69,20 +69,17 @@ index 3d49305..0a3da0a 100644
 +	spinlock_t lock;
 +};
 +
-+int sail_insert(struct sail *s, u64 key,
-+		u8 prefix_len, struct net_device *dev);
-+int sail_delete(struct sail *s, u64 key,
-+		u8 prefix_len);
++int sail_insert(struct sail *s, u64 key, u8 prefix_len, struct net_device *dev);
++int sail_delete(struct sail *s, u64 key, u8 prefix_len);
 +int sail_flush(struct sail *s);
-+int sail_lookup(const struct sail *s, const u64 dest,
-+		struct net_device **dev);
++int sail_lookup(const struct sail *s, const u64 dest, struct net_device **dev);
 +#endif
 +
 +
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +399,10 @@ struct fib6_table {
+@@ -342,6 +396,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -129,10 +126,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..ed83e33
+index 0000000..53c09aa
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,787 @@
+@@ -0,0 +1,784 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -516,8 +513,7 @@ index 0000000..ed83e33
 +	return 0;
 +}
 +
-+int sail_insert(struct sail *s, u64 key, u8 prefix_len,
-+		struct net_device *dev)
++int sail_insert(struct sail *s, u64 key, u8 prefix_len, struct net_device *dev)
 +{
 +	int i, j;
 +        u8 k;
@@ -847,11 +843,9 @@ index 0000000..ed83e33
 +	return 0;
 +}
 +
-+int sail_lookup(const struct sail *s,
-+		const u64 key, struct net_device **dev)
++int sail_lookup(const struct sail *s, const u64 key, struct net_device **dev)
 +{
 +        int j;
-+        u64 mask;
 +        u8 bitshifts;
 +	u8 *n16, *n;
 +	u16 *c16, *c;
@@ -921,10 +915,10 @@ index 0000000..ed83e33
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..a5bee300 100644
+index 826b14d..cde61af 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1157,6 +1157,27 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,11 +1157,30 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  {
  	int err;
  	struct fib6_table *table;
@@ -933,22 +927,55 @@ index 826b14d..a5bee300 100644
 +        __be16 *addr_ipv6 =  rt->fib6_dst.addr.in6_u.u6_addr16;
 +
 +        if (rt->fib6_dst.plen <= 64) {
-+            pr_err("%pI6c %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
-+            pr_err("addr[0]=%d addr[1]=%d addr[2]=%d addr[3]=%d", ntohs(addr_ipv6[0]), ntohs(addr_ipv6[1]), ntohs(addr_ipv6[2]), ntohs(addr_ipv6[3]));
++            pr_err("Inserting %pI6c %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
++//            pr_err("addr[0]=%d addr[1]=%d addr[2]=%d addr[3]=%d", ntohs(addr_ipv6[0]), ntohs(addr_ipv6[1]), ntohs(addr_ipv6[2]), ntohs(addr_ipv6[3]));
 +
 +            key = ((__force u64)(ntohs(addr_ipv6[0])) << 48) |
 +                  ((__force u64)(ntohs(addr_ipv6[1])) << 32) |
 +                  ((__force u64)(ntohs(addr_ipv6[2])) << 16) |
 +                  (__force u64)(ntohs(addr_ipv6[4]));
-+            pr_err("Key=%llu", key);        
++//            pr_err("Key=%llu", key);        
 +
-+            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);
-+            if (key % 2 == 0)
-+                sail_delete(&rt->fib6_table->sail, key, rt->fib6_dst.plen);
-+            
-+            sail_lookup(&rt->fib6_table->sail, 1025, &dev);
-+            pr_err("Outgoing port = %s", dev->name);
++            sail_insert(&rt->fib6_table->sail, key, rt->fib6_dst.plen, rt->fib6_nh.nh_dev);            
 +        }
+ 
+ 	table = rt->fib6_table;
+ 	spin_lock_bh(&table->tb6_lock);
+ 	err = fib6_add(&table->tb6_root, rt, info, extack);
+ 	spin_unlock_bh(&table->tb6_lock);
++        
++        sail_lookup(&rt->fib6_table->sail, 1025, &dev);
++        pr_err("Outgoing port = %s", dev->name);
+ 
+ 	return err;
+ }
+@@ -3179,11 +3198,28 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+ 	struct net *net = info->nl_net;
+ 	struct fib6_table *table;
+ 	int err;
++        u64 key;
++        __be16 *addr_ipv6 =  rt->fib6_dst.addr.in6_u.u6_addr16;
++
++        if (rt->fib6_dst.plen <= 64) {
++            pr_err("Deleting %pI6c/%d", &rt->fib6_dst.addr, rt->fib6_dst.plen);
++//            pr_err("addr[0]=%d addr[1]=%d addr[2]=%d addr[3]=%d", ntohs(addr_ipv6[0]), ntohs(addr_ipv6[1]), ntohs(addr_ipv6[2]), ntohs(addr_ipv6[3]));
+ 
++            key = ((__force u64)(ntohs(addr_ipv6[0])) << 48) |
++                  ((__force u64)(ntohs(addr_ipv6[1])) << 32) |
++                  ((__force u64)(ntohs(addr_ipv6[2])) << 16) |
++                  (__force u64)(ntohs(addr_ipv6[4]));
++//            pr_err("Key=%llu", key);        
++
++            sail_delete(&rt->fib6_table->sail, key, rt->fib6_dst.plen);
++        }
++
++	table = rt->fib6_table;
++        
+ 	if (rt == net->ipv6.fib6_null_entry) {
+ 		err = -ENOENT;
+ 		goto out;
+-	}
++	}       
  
  	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
