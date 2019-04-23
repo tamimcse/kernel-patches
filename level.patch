@@ -915,7 +915,7 @@ index 0000000..53c09aa
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..9e1b931 100644
+index 826b14d..4a2b592 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -1146,6 +1146,19 @@ struct rt6_info *rt6_lookup(struct net *net, const struct in6_addr *daddr,
@@ -969,7 +969,7 @@ index 826b14d..9e1b931 100644
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        pr_err("1: %pI6c => %s", &fl6->daddr, f6i->fib6_nh.nh_dev->name);
 +        sail_lookup(&table->sail, get_key(fl6->daddr), &dev);
-+        pr_err("Outgoing port = %s", dev->name);
++        pr_err("2: %pI6c => %s", &fl6->daddr, dev->name);
 +#endif
 +
  	if (f6i->fib6_nsiblings)
