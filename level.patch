@@ -915,7 +915,7 @@ index 0000000..53c09aa
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..069dce4 100644
+index 826b14d..82dc412 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -1146,6 +1146,28 @@ struct rt6_info *rt6_lookup(struct net *net, const struct in6_addr *daddr,
@@ -925,7 +925,7 @@ index 826b14d..069dce4 100644
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +static void get_addr (struct in6_addr *addr, u64 key)
 +{
-+    __be16 *addr_ipv6 = addr.in6_u.u6_addr16;
++    __be16 *addr_ipv6 = addr->in6_u.u6_addr16;
 +    addr_ipv6[0] = key >> 48;
 +    addr_ipv6[1] = (key >> 32) & 0XFF;
 +    addr_ipv6[2] = (key >> 16) & 0XFF;
