@@ -915,10 +915,10 @@ index 0000000..53c09aa
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..82dc412 100644
+index 826b14d..950a447 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
-@@ -1146,6 +1146,28 @@ struct rt6_info *rt6_lookup(struct net *net, const struct in6_addr *daddr,
+@@ -1146,6 +1146,32 @@ struct rt6_info *rt6_lookup(struct net *net, const struct in6_addr *daddr,
  }
  EXPORT_SYMBOL(rt6_lookup);
  
@@ -926,10 +926,14 @@ index 826b14d..82dc412 100644
 +static void get_addr (struct in6_addr *addr, u64 key)
 +{
 +    __be16 *addr_ipv6 = addr->in6_u.u6_addr16;
-+    addr_ipv6[0] = key >> 48;
-+    addr_ipv6[1] = (key >> 32) & 0XFF;
-+    addr_ipv6[2] = (key >> 16) & 0XFF;
-+    addr_ipv6[3] = key & 0XFF;
++    addr_ipv6[0] = htons(key >> 48);
++    addr_ipv6[1] = htons((key >> 32) & 0XFFFF);
++    addr_ipv6[2] = htons((key >> 16) & 0XFFFF);
++    addr_ipv6[3] = htons(key & 0XFFFF);
++    addr_ipv6[4] = 0;
++    addr_ipv6[5] = 0;
++    addr_ipv6[6] = 0;
++    addr_ipv6[7] = 0;
 +}
 +
 +static u64 get_key (struct in6_addr addr)
@@ -939,7 +943,7 @@ index 826b14d..82dc412 100644
 +    key = ((__force u64)(ntohs(addr_ipv6[0])) << 48) |
 +          ((__force u64)(ntohs(addr_ipv6[1])) << 32) |
 +          ((__force u64)(ntohs(addr_ipv6[2])) << 16) |
-+          (__force u64)(ntohs(addr_ipv6[4]));
++          (__force u64)(ntohs(addr_ipv6[3]));
 +    return key;
 +}
 +#endif
@@ -947,7 +951,7 @@ index 826b14d..82dc412 100644
  /* ip6_ins_rt is called with FREE table->tb6_lock.
   * It takes new route entry, the addition fails by any reason the
   * route is released.
-@@ -1157,7 +1179,13 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+@@ -1157,7 +1183,13 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
  {
  	int err;
  	struct fib6_table *table;
@@ -961,65 +965,66 @@ index 826b14d..82dc412 100644
  	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
  	err = fib6_add(&table->tb6_root, rt, info, extack);
-@@ -1854,6 +1882,10 @@ struct fib6_info *fib6_table_lookup(struct net *net, struct fib6_table *table,
+@@ -1854,6 +1886,10 @@ struct fib6_info *fib6_table_lookup(struct net *net, struct fib6_table *table,
  	return f6i;
  }
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
-+static u64 global_key = 0; 
++static u64 global_key = 0X2001000000000001;
 +#endif
 +
  struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  			       int oif, struct flowi6 *fl6,
  			       const struct sk_buff *skb, int flags)
-@@ -1861,6 +1893,10 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+@@ -1861,6 +1897,11 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  	struct fib6_info *f6i;
  	struct rt6_info *rt;
  	int strict = 0;
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        struct net_device *dev;
-+        int i; 
++        int i;
++        u64 arr [] = {2306124484190404608, 2306124501388230656, 2306126683213660160};
 +#endif
  
  	strict |= flags & RT6_LOOKUP_F_IFACE;
  	strict |= flags & RT6_LOOKUP_F_IGNORE_LINKSTATE;
-@@ -1869,6 +1905,35 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+@@ -1869,6 +1910,35 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  
  	rcu_read_lock();
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
 +        sail_lookup(&net->ipv6.fib6_main_tbl->sail, get_key(fl6->daddr), &dev);
-+        if (f6i->fib6_nh.nh_dev->name && dev->name &&
++  /*      if (f6i->fib6_nh.nh_dev->name && dev->name &&
 +                strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
 +                strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
 +                strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
 +            pr_err("Trie: %pI6c => %s", &fl6->daddr, f6i->fib6_nh.nh_dev->name);
 +            pr_err("SAIL: %pI6c => %s", &fl6->daddr, dev->name);            
-+        }
++        }*/
 +        
-+        for (i = 0; i < 1000; i++) {
-+            get_addr(&fl6->daddr, global_key);
++        for (i = 0; i < 3; i++) {
++            get_addr(&fl6->daddr, arr[i]);
 +            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+            sail_lookup(&net->ipv6.fib6_main_tbl->sail, global_key, &dev);
++            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
 +        if (f6i->fib6_nh.nh_dev->name && dev->name &&
-+                strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
++                strcmp(f6i->fib6_nh.nh_dev->name, dev->name)/* &&
 +                strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
-+                strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
-+            pr_err("..Trie: %pI6c => %s", &fl6->daddr, f6i->fib6_nh.nh_dev->name);
-+            pr_err("..SAIL: %pI6c => %s", &fl6->daddr, dev->name);            
++                strcmp(f6i->fib6_nh.nh_dev->name, "lo")*/) {
++            pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
++            pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);            
 +        }
-+                if (global_key == 0XFFFFFFFFFFFFFFFF)
-+                    global_key = 0;
-+                else 
-+                    global_key++;
++//                if (global_key == 0XFFFFFFFFFFFFFFFF)
++//                    global_key = 0;
++//                else 
++//                    global_key++;
 +        }
 +
 +#endif
  	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
  	if (f6i->fib6_nsiblings)
  		f6i = fib6_multipath_select(net, f6i, fl6, oif, skb, strict);
-@@ -3179,11 +3244,18 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+@@ -3179,11 +3249,18 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
  	struct net *net = info->nl_net;
  	struct fib6_table *table;
  	int err;
