@@ -915,7 +915,7 @@ index 0000000..53c09aa
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..eacc514 100644
+index 826b14d..7938c60 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1017,16 +1017,16 @@ index 826b14d..eacc514 100644
  	rcu_read_lock();
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
-+        f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+        sail_lookup(&net->ipv6.fib6_main_tbl->sail, get_key(fl6->daddr), &dev);
-+        if (f6i->fib6_nh.nh_dev->name && dev->name &&
-+                strcmp(f6i->fib6_nh.nh_dev->name, dev->name) /*&&
-+                strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
-+                strcmp(f6i->fib6_nh.nh_dev->name, "lo")*/) {
-+            
-+            pr_err("Trie: %pI6c => %s", &fl6->daddr, f6i->fib6_nh.nh_dev->name);
-+            pr_err("SAIL: %pI6c => %s", &fl6->daddr, dev->name);            
-+        }
++//        f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
++//        sail_lookup(&net->ipv6.fib6_main_tbl->sail, get_key(fl6->daddr), &dev);
++//        if (f6i->fib6_nh.nh_dev->name && dev->name &&
++//                strcmp(f6i->fib6_nh.nh_dev->name, dev->name) /*&&
++//                strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
++//                strcmp(f6i->fib6_nh.nh_dev->name, "lo")*/) {
++//            
++//            pr_err("Trie: %pI6c => %s", &fl6->daddr, f6i->fib6_nh.nh_dev->name);
++//            pr_err("SAIL: %pI6c => %s", &fl6->daddr, dev->name);            
++//        }
 +        
 +        for (i = 0; i < 3; i++) {
 +            get_addr(&fl6->daddr, arr[i]);
