@@ -915,7 +915,7 @@ index 0000000..b7377e5
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..dde0064 100644
+index 826b14d..9dad08a 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1022,35 +1022,35 @@ index 826b14d..dde0064 100644
  	rcu_read_lock();
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
-+        for (i = 0; i < sizeof (arr)/sizeof(arr[0]); i++) {
-+            get_addr(&fl6->daddr, arr[i]);
-+            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
-+            if (f6i->fib6_nh.nh_dev->name && dev->name &&
-+                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
-+                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
-+                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
-+                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
-+                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
-+            }
-+        }
-+        
-+//        for (i = 0; i < 1000; i++) {
-+//            get_addr(&fl6->daddr, global_key);
++//        for (i = 0; i < sizeof (arr)/sizeof(arr[0]); i++) {
++//            get_addr(&fl6->daddr, arr[i]);
 +//            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+//            sail_lookup(&net->ipv6.fib6_main_tbl->sail, global_key, &dev);
++//            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
 +//            if (f6i->fib6_nh.nh_dev->name && dev->name &&
 +//                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
 +//                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
 +//                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
 +//                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
-+//                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);            
++//                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
 +//            }
-+//            if ( global_key >= 0X20012D80FFFFFFFF)
-+//                global_key = 0X20010200FFFFFFFF;
-+//            else 
-+//                global_key += 0X100000000;
 +//        }
++        
++        for (i = 0; i < 1000; i++) {
++            get_addr(&fl6->daddr, global_key);
++            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
++            sail_lookup(&net->ipv6.fib6_main_tbl->sail, global_key, &dev);
++            if (f6i->fib6_nh.nh_dev->name && dev->name &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
++                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
++                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);            
++            }
++            if ( global_key >= 0X20012D80FFFFFFFF)
++                global_key = 0X20010200FFFFFFFF;
++            else 
++                global_key += 0X100000000;
++        }
 +
 +#endif
  	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
