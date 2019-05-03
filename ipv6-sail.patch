@@ -915,7 +915,7 @@ index 0000000..b7377e5
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..3e45654 100644
+index 826b14d..96a554e 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -989,21 +989,22 @@ index 826b14d..3e45654 100644
  	table = rt->fib6_table;
  	spin_lock_bh(&table->tb6_lock);
  	err = fib6_add(&table->tb6_root, rt, info, extack);
-@@ -1854,6 +1888,13 @@ struct fib6_info *fib6_table_lookup(struct net *net, struct fib6_table *table,
+@@ -1854,6 +1888,14 @@ struct fib6_info *fib6_table_lookup(struct net *net, struct fib6_table *table,
  	return f6i;
  }
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +static u64 global_key = 0X2001020000000000;
-+#define NUM_TEST_CASES 10000
++#define NUM_TEST_CASES 1000000
 +static u64 arr [NUM_TEST_CASES];
 +static u64 increment = 0X100000000;
++static bool first_time = true;
 +#endif
 +
  struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  			       int oif, struct flowi6 *fl6,
  			       const struct sk_buff *skb, int flags)
-@@ -1861,6 +1902,10 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+@@ -1861,6 +1903,10 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  	struct fib6_info *f6i;
  	struct rt6_info *rt;
  	int strict = 0;
@@ -1014,35 +1015,40 @@ index 826b14d..3e45654 100644
  
  	strict |= flags & RT6_LOOKUP_F_IFACE;
  	strict |= flags & RT6_LOOKUP_F_IGNORE_LINKSTATE;
-@@ -1869,6 +1914,41 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+@@ -1869,6 +1915,46 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  
  	rcu_read_lock();
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
-+        for (i = 0; i < NUM_TEST_CASES; i++) {
-+            arr[i] = global_key;
-+            if ( global_key >= 0X2001800000000000) {
-+                global_key = 0X2001020000000000;
-+                if (increment == 0X100000000)
-+                    increment = 0X10000;
-+                else if (increment == 0X10000)
-+                    increment = 0X100;
-+                else 
-+                    increment = 0X100000000;
-+            } else { 
-+                global_key += increment;
++        
++        if(first_time) {
++            first_time = false;
++            for (i = 0; i < NUM_TEST_CASES; i++) {
++                arr[i] = global_key;
++                if ( global_key >= 0X2001800000000000) {
++                    global_key = 0X2001020000000000;
++                    if (increment == 0X100000000)
++                        increment = 0X10000;
++                    else if (increment == 0X10000)
++                        increment = 0X100;
++                    else 
++                        increment = 0X100000000;
++                } else { 
++                    global_key += increment;
++                }
 +            }
++
++    //        for (i = 0; i < NUM_TEST_CASES; i++) {
++    //            get_addr(&fl6->daddr, arr[i]);
++    //            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
++    //        }            
 +        }
 +
-+//        for (i = 0; i < NUM_TEST_CASES; i++) {
-+//            get_addr(&fl6->daddr, arr[i]);
-+//            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
-+//        }
 +        
 +        for (i = 0; i < NUM_TEST_CASES; i++) {
++            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
 +            get_addr(&fl6->daddr, arr[i]);
 +            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
 +            if (f6i->fib6_nh.nh_dev->name && dev->name &&
 +                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
 +                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
@@ -1056,7 +1062,7 @@ index 826b14d..3e45654 100644
  	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
  	if (f6i->fib6_nsiblings)
  		f6i = fib6_multipath_select(net, f6i, fl6, oif, skb, strict);
-@@ -3179,7 +3259,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+@@ -3179,7 +3265,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
  	struct net *net = info->nl_net;
  	struct fib6_table *table;
  	int err;
