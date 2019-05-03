@@ -915,7 +915,7 @@ index 0000000..b7377e5
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..85c121b 100644
+index 826b14d..d7455ee 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1029,7 +1029,7 @@ index 826b14d..85c121b 100644
 +                if (increment == 0X100000000)
 +                    increment = 0X10000;
 +                else if (increment == 0X10000)
-+                    increment = 0X100;
++                    increment = 0X1000;
 +                else 
 +                    increment = 0X100000000;
 +            } else { 
