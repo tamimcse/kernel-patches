@@ -915,7 +915,7 @@ index 0000000..b7377e5
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..96a554e 100644
+index 826b14d..85c121b 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -995,10 +995,10 @@ index 826b14d..96a554e 100644
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +static u64 global_key = 0X2001020000000000;
-+#define NUM_TEST_CASES 1000000
++#define NUM_TEST_CASES 1000
 +static u64 arr [NUM_TEST_CASES];
 +static u64 increment = 0X100000000;
-+static bool first_time = true;
++static spinlock_t lock_gen;
 +#endif
 +
  struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
@@ -1015,35 +1015,32 @@ index 826b14d..96a554e 100644
  
  	strict |= flags & RT6_LOOKUP_F_IFACE;
  	strict |= flags & RT6_LOOKUP_F_IGNORE_LINKSTATE;
-@@ -1869,6 +1915,46 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+@@ -1869,6 +1915,45 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  
  	rcu_read_lock();
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        
-+        if(first_time) {
-+            first_time = false;
-+            for (i = 0; i < NUM_TEST_CASES; i++) {
-+                arr[i] = global_key;
-+                if ( global_key >= 0X2001800000000000) {
-+                    global_key = 0X2001020000000000;
-+                    if (increment == 0X100000000)
-+                        increment = 0X10000;
-+                    else if (increment == 0X10000)
-+                        increment = 0X100;
-+                    else 
-+                        increment = 0X100000000;
-+                } else { 
-+                    global_key += increment;
-+                }
++        spin_lock(&lock_gen);
++        for (i = 0; i < NUM_TEST_CASES; i++) {
++            arr[i] = global_key;
++            if ( global_key >= 0X2001800000000000) {
++                global_key = 0X2001020000000000;
++                if (increment == 0X100000000)
++                    increment = 0X10000;
++                else if (increment == 0X10000)
++                    increment = 0X100;
++                else 
++                    increment = 0X100000000;
++            } else { 
++                global_key += increment;
 +            }
++        }                
 +
-+    //        for (i = 0; i < NUM_TEST_CASES; i++) {
-+    //            get_addr(&fl6->daddr, arr[i]);
-+    //            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
-+    //        }            
-+        }
-+
++//        for (i = 0; i < NUM_TEST_CASES; i++) {
++//            get_addr(&fl6->daddr, arr[i]);
++//            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
++//        }
 +        
 +        for (i = 0; i < NUM_TEST_CASES; i++) {
 +            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
@@ -1057,12 +1054,14 @@ index 826b14d..96a554e 100644
 +                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
 +            }
 +        }
++        
++        spin_unlock(&lock_gen);
 +
 +#endif
  	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
  	if (f6i->fib6_nsiblings)
  		f6i = fib6_multipath_select(net, f6i, fl6, oif, skb, strict);
-@@ -3179,7 +3265,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+@@ -3179,7 +3264,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
  	struct net *net = info->nl_net;
  	struct fib6_table *table;
  	int err;
