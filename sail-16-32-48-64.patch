@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..0b2bd42 100644
+index 3d49305..2e9dc34 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,61 @@
@@ -29,7 +29,7 @@ index 3d49305..0b2bd42 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +#define NUM_LEVELS 6
-+#define PARTS 4
++#define PARTS 255
 +struct chunk {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
 +	u64 bitmap[PARTS];
@@ -127,10 +127,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..6b06b4f
+index 0000000..f3f2892
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,784 @@
+@@ -0,0 +1,785 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -398,7 +398,8 @@ index 0000000..6b06b4f
 +			return false;
 +	}
 +
-+	if (ck->bitmap[0] || ck->bitmap[1] || ck->bitmap[2] || ck->bitmap[3])
++        for ( i = 0; i < PARTS; i++)
++            if (ck->bitmap[i])
 +		return false;
 +
 +	return true;
