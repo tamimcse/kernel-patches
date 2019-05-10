@@ -126,7 +126,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..be88114
+index 0000000..51d7b9c
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,784 @@
@@ -145,13 +145,13 @@ index 0000000..be88114
 +#define LEVEL16_SIZE 65536
 +
 +/*Length of C array in level 24-64.*/
-+#define C_SIZE 25
++#define C_SIZE 32
 +
 +/*chunk size is 2^8*/
 +#define CNK_SIZE 65536
 +
 +/*Total number of chunks preallocated for level 24-64*/
-+#define NUM_CHUNKS 25
++#define NUM_CHUNKS 64
 +
 +/*memory preallocated for N and P array in level 24-64*/
 +#define ARR_SIZE NUM_CHUNKS * CNK_SIZE
