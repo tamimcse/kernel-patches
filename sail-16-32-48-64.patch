@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..c260fa5 100644
+index 3d49305..0b2bd42 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,60 @@
+@@ -40,6 +40,61 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -29,16 +29,17 @@ index 3d49305..c260fa5 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +#define NUM_LEVELS 6
++#define PARTS 4
 +struct chunk {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
-+	u64 bitmap[4];
++	u64 bitmap[PARTS];
 +	/*
 +	 * Index to C24 where chunk is started. A chunk corresponds
 +	 * to 256 elements. Instead of having just one start index for the
 +	 * whole chunk, we divide the chunk into 4 parts and save start
 +	 * index for each part.
 +	 */
-+	u64 start_index[4];
++	u64 start_index[PARTS];
 +};
 +
 +struct level {
@@ -79,7 +80,7 @@ index 3d49305..c260fa5 100644
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +396,10 @@ struct fib6_table {
+@@ -342,6 +397,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -126,7 +127,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..51d7b9c
+index 0000000..6b06b4f
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,784 @@
@@ -236,7 +237,7 @@ index 0000000..51d7b9c
 +		CK[m + 1] = CK[m];
 +
 +	/*Reset the newly created empty chunk*/
-+	for (m = 0; m < 4; m++) {
++	for (m = 0; m < PARTS; m++) {
 +		CK[chunk_id - 1].bitmap[m] = 0;
 +		CK[chunk_id - 1].start_index[m] = 0;
 +	}
@@ -281,7 +282,7 @@ index 0000000..51d7b9c
 +	}
 +
 +	/*Reset the the last chunk*/
-+	for (m = 0; m < 4; m++) {
++	for (m = 0; m < PARTS; m++) {
 +		CK[*cnk_count - 1].start_index[m] = 0;
 +		CK[*cnk_count - 1].bitmap[m] = 0;
 +	}
@@ -432,7 +433,7 @@ index 0000000..51d7b9c
 +				goto index_found;
 +			}
 +		}
-+		j = 3;
++		j = PARTS - 1;
 +	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
@@ -482,7 +483,7 @@ index 0000000..51d7b9c
 +				goto index_found;
 +			}
 +		}
-+		j = 3;
++		j = PARTS - 1;
 +	}
 +
 +index_found:
@@ -503,7 +504,7 @@ index 0000000..51d7b9c
 +	/*Update offset of the chunks to the right*/
 +	j = part_idx + 1;
 +	for (i = (long long)ck_idx; i < cnk_count; i++) {
-+		for (; j < 4; j++) {
++		for (; j < PARTS; j++) {
 +			if (ck[i].bitmap[j])
 +				ck[i].start_index[j]++;
 +		}
