@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..2e9dc34 100644
+index 3d49305..04a1ecc 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,61 @@
@@ -29,7 +29,7 @@ index 3d49305..2e9dc34 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +#define NUM_LEVELS 6
-+#define PARTS 255
++#define PARTS 512
 +struct chunk {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
 +	u64 bitmap[PARTS];
