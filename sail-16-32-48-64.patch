@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..04a1ecc 100644
+index 3d49305..38ac220 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,61 @@
@@ -28,8 +28,8 @@ index 3d49305..04a1ecc 100644
 + * allows us to represent netdev_index as an u8
 + */
 +#define NETDEV_COUNT_MAX 255
-+#define NUM_LEVELS 6
-+#define PARTS 512
++#define NUM_LEVELS 3
++#define PARTS 1024
 +struct chunk {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
 +	u64 bitmap[PARTS];
@@ -127,7 +127,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..f3f2892
+index 0000000..e7cd252
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,785 @@
@@ -164,15 +164,15 @@ index 0000000..f3f2892
 +#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*Calculate index to C24 from CK26 chunk and chunk offset */
-+static u64 calc_c_idx(struct chunk c, u32 cnk_off)
++static u64 calc_c_idx(struct chunk *c, u64 cnk_off)
 +{
 +	u8 part_idx, part_off;
 +
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	return c.start_index[part_idx] +
-+		POPCNT_OFF(c.bitmap[part_idx], part_off);
++	return c->start_index[part_idx] +
++		POPCNT_OFF(c->bitmap[part_idx], part_off);
 +}
 +
 +/*Converts a net_device to corresponding netdev_index*/
@@ -364,7 +364,7 @@ index 0000000..f3f2892
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	chunk_id = C[calc_c_idx(CK[cnk_idx], cnk_off)];
++	chunk_id = C[calc_c_idx(&CK[cnk_idx], cnk_off)];
 +	CK[cnk_idx].bitmap[part_idx] &= ~(1ULL << part_off);
 +
 +	for (i = 0; i < C_SIZE; i++) {
@@ -406,21 +406,21 @@ index 0000000..f3f2892
 +}
 +
 +/*Calculate the chunk ID for upper level based on CK and C of lower level*/
-+static u16 calc_ckid(struct chunk *ck, u32 ck_idx, u32 ck_off, u16 *c_arr)
++static u16 calc_ckid(struct chunk *ck, u16 ck_idx, u64 ck_off, u16 *c_arr)
 +{
 +	long long i, j;
 +	long long index = 0;
-+	u8 part_idx, part_off;
-+	struct chunk c;
++	u8 part_off, part_idx;
++//	struct chunk *c;
 +
 +	part_idx = ck_off / 64;
 +	part_off = ck_off % 64;
-+	c = ck[ck_idx];
++//	c = &ck[ck_idx];
 +
 +	/*find the index to C24 where previous chunk ID would be found*/
-+	if (c.bitmap[part_idx]) {
-+		index = c.start_index[part_idx] +
-+		    POPCNT_OFF(c.bitmap[part_idx], part_off) - 1;
++	if (ck[ck_idx].bitmap[part_idx]) {
++		index = ck[ck_idx].start_index[part_idx] +
++		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;
 +		if (index >= 0)
 +			goto index_found;
 +	}
@@ -560,7 +560,7 @@ index 0000000..f3f2892
 +		RCU_INIT_POINTER(s->P16, p16);
 +		RCU_INIT_POINTER(s->C16, c16);
 +                
-+                for (j = 0, k = 24; j < NUM_LEVELS; j++, k += 8) {
++                for (j = 0, k = 32; j < NUM_LEVELS; j++, k += 16) {
 +                    n = kcalloc(ARR_SIZE, sizeof(*n), GFP_ATOMIC);
 +                    p = kcalloc(ARR_SIZE, sizeof(*p), GFP_ATOMIC);
 +                    ck = kcalloc(NUM_CHUNKS, sizeof(*ck), GFP_ATOMIC);
@@ -626,13 +626,13 @@ index 0000000..f3f2892
 +	}
 +
 +	/*Extract bit 17~24 from MSB and calculate index to level 24*/
-+	n_idx = (s->C16[n16_idx] - 1) * CNK_SIZE + ((key >> 40) & 0XFF);
++	n_idx = (s->C16[n16_idx] - 1) * CNK_SIZE + ((key >> 32) & 0XFFFF);
 +	ck_idx = s->C16[n16_idx] - 1;
-+	ck_off = (key >> 40) & 0XFF;
++	ck_off = (key >> 32) & 0XFFFF;
 +
-+	if (prefix_len <= 24) {
++	if (prefix_len <= 32) {
 +		/*All the leafs in level 17~24 will be stored in level 24.*/
-+		num_leafs = 1U << (24 - prefix_len);
++		num_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < num_leafs; i++) {
 +			/*Longer prefix exists*/
 +                        if (s->arr[0].P[n_idx + i] > prefix_len)
@@ -644,7 +644,7 @@ index 0000000..f3f2892
 +	}
 +        
 +        /*bitshifts indicate how many bit shifting is needed*/
-+        for (j = 1, bitshifts = 32; j < NUM_LEVELS; j++, bitshifts -= 8) {
++        for (j = 1, bitshifts = 16; j < NUM_LEVELS; j++, bitshifts -= 16) {
 +            /* The length of the prefix is 25-64, but there is no chunk for
 +             * this prefix in the next level. So do the same as before
 +             */
@@ -663,12 +663,12 @@ index 0000000..f3f2892
 +                            goto error;
 +            }
 +
-+            c_idx = calc_c_idx(s->arr[j-1].CK[ck_idx], ck_off);
++            c_idx = calc_c_idx(&(s->arr[j-1].CK[ck_idx]), ck_off);
 +            /*Extract 8 bit from MSB and calculate index to level 32*/
-+            n_idx = (s->arr[j-1].C[c_idx] - 1) * CNK_SIZE + ((key >> bitshifts) & 0XFF);
++            n_idx = (s->arr[j-1].C[c_idx] - 1) * CNK_SIZE + ((key >> bitshifts) & 0XFFFF);
 +            ck_idx = s->arr[j-1].C[c_idx] - 1;
-+            ck_off = (key >> bitshifts) & 0XFF;
-+
++            ck_off = (key >> bitshifts) & 0XFFFF;
++            
 +            if (prefix_len <= s->arr[j].prefix_len) {
 +                    /*All the leafs in level 25~32 will be stored in level 32.*/
 +                    num_leafs = 1U << (s->arr[j].prefix_len - prefix_len);
@@ -680,7 +680,7 @@ index 0000000..f3f2892
 +                            s->arr[j].P[n_idx + i] = prefix_len;
 +                    }
 +                    goto finish;
-+            }            
++            }
 +        }
 +
 +error:
@@ -759,7 +759,7 @@ index 0000000..f3f2892
 +            if (!(s->arr[j - 1].CK[ck_idx].bitmap[part_idx] & (1ULL << part_off)))
 +                    goto error;
 +
-+            ck_id = s->arr[j - 1].C[calc_c_idx(s->arr[j - 1].CK[ck_idx], ck_off)];
++            ck_id = s->arr[j - 1].C[calc_c_idx(&(s->arr[j - 1].CK[ck_idx]), ck_off)];
 +            ck_idx = ck_id - 1;
 +            ck_off = (key >> bitshifts) & 0XFF;
 +            /*Extract 8 bit from MSB and calculate index to level 32*/
@@ -917,7 +917,7 @@ index 0000000..f3f2892
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..d7455ee 100644
+index 826b14d..d36ac31 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1023,41 +1023,41 @@ index 826b14d..d7455ee 100644
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        
-+        spin_lock(&lock_gen);
-+        for (i = 0; i < NUM_TEST_CASES; i++) {
-+            arr[i] = global_key;
-+            if ( global_key >= 0X2001800000000000) {
-+                global_key = 0X2001020000000000;
-+                if (increment == 0X100000000)
-+                    increment = 0X10000;
-+                else if (increment == 0X10000)
-+                    increment = 0X1000;
-+                else 
-+                    increment = 0X100000000;
-+            } else { 
-+                global_key += increment;
-+            }
-+        }                
-+
++//        spin_lock(&lock_gen);
 +//        for (i = 0; i < NUM_TEST_CASES; i++) {
++//            arr[i] = global_key;
++//            if ( global_key >= 0X2001800000000000) {
++//                global_key = 0X2001020000000000;
++//                if (increment == 0X100000000)
++//                    increment = 0X10000;
++//                else if (increment == 0X10000)
++//                    increment = 0X1000;
++//                else 
++//                    increment = 0X100000000;
++//            } else { 
++//                global_key += increment;
++//            }
++//        }                
++//
++////        for (i = 0; i < NUM_TEST_CASES; i++) {
++////            get_addr(&fl6->daddr, arr[i]);
++////            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
++////        }
++//        
++//        for (i = 0; i < NUM_TEST_CASES; i++) {
++//            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
 +//            get_addr(&fl6->daddr, arr[i]);
-+//            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
++//            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
++//            if (f6i->fib6_nh.nh_dev->name && dev->name &&
++//                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
++//                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
++//                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
++//                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
++//                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
++//            }
 +//        }
-+        
-+        for (i = 0; i < NUM_TEST_CASES; i++) {
-+            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
-+            get_addr(&fl6->daddr, arr[i]);
-+            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+            if (f6i->fib6_nh.nh_dev->name && dev->name &&
-+                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
-+                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
-+                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
-+                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
-+                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
-+            }
-+        }
-+        
-+        spin_unlock(&lock_gen);
++//        
++//        spin_unlock(&lock_gen);
 +
 +#endif
  	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
