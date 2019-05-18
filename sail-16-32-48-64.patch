@@ -127,10 +127,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..e7cd252
+index 0000000..8637b49
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,785 @@
+@@ -0,0 +1,786 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -146,7 +146,7 @@ index 0000000..e7cd252
 +#define LEVEL16_SIZE 65536
 +
 +/*Length of C array in level 24-64.*/
-+#define C_SIZE 32
++#define C_SIZE 6000
 +
 +/*chunk size is 2^8*/
 +#define CNK_SIZE 65536
@@ -625,13 +625,13 @@ index 0000000..e7cd252
 +			goto error;
 +	}
 +
-+	/*Extract bit 17~24 from MSB and calculate index to level 24*/
++	/*Extract bit 17~32 from MSB and calculate index to level 32*/
 +	n_idx = (s->C16[n16_idx] - 1) * CNK_SIZE + ((key >> 32) & 0XFFFF);
 +	ck_idx = s->C16[n16_idx] - 1;
 +	ck_off = (key >> 32) & 0XFFFF;
 +
 +	if (prefix_len <= 32) {
-+		/*All the leafs in level 17~24 will be stored in level 24.*/
++		/*All the leafs in level 17~32 will be stored in level 32.*/
 +		num_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < num_leafs; i++) {
 +			/*Longer prefix exists*/
@@ -645,7 +645,7 @@ index 0000000..e7cd252
 +        
 +        /*bitshifts indicate how many bit shifting is needed*/
 +        for (j = 1, bitshifts = 16; j < NUM_LEVELS; j++, bitshifts -= 16) {
-+            /* The length of the prefix is 25-64, but there is no chunk for
++            /* The length of the prefix is 32-64, but there is no chunk for
 +             * this prefix in the next level. So do the same as before
 +             */
 +            part_idx = ck_off / 64;
@@ -664,13 +664,14 @@ index 0000000..e7cd252
 +            }
 +
 +            c_idx = calc_c_idx(&(s->arr[j-1].CK[ck_idx]), ck_off);
-+            /*Extract 8 bit from MSB and calculate index to level 32*/
++            /*Extract 16 more bits and calculate index to level 48, 64,..*/
 +            n_idx = (s->arr[j-1].C[c_idx] - 1) * CNK_SIZE + ((key >> bitshifts) & 0XFFFF);
 +            ck_idx = s->arr[j-1].C[c_idx] - 1;
 +            ck_off = (key >> bitshifts) & 0XFFFF;
 +            
 +            if (prefix_len <= s->arr[j].prefix_len) {
-+                    /*All the leafs in level 25~32 will be stored in level 32.*/
++                    /*All the leafs in level 33~48 will be stored in level 48.
++                     All the leafs in level 49~64 will be stored in level 64.*/
 +                    num_leafs = 1U << (s->arr[j].prefix_len - prefix_len);
 +                    for (i = 0; i < num_leafs; i++) {
 +                            /*Longer prefix exists*/
@@ -871,26 +872,26 @@ index 0000000..e7cd252
 +	if (likely(n16[n16_idx] != 0))
 +		netdev_index = n16[n16_idx];
 +
-+	/*Check if there is a longer prefix; if yes, extract bit 17~24
-+	 *  and calculate index to N24
++	/*Check if there is a longer prefix; if yes, extract bit 17~32
++	 *  and calculate index to N32
 +	 */
 +	c16 = rcu_dereference(s->C16);
 +	if (likely(c16[n16_idx] != 0)) {
 +		ck_idx = c16[n16_idx] - 1;
-+		ck_off = (key >> 40) & 0XFF;
++		ck_off = (key >> 32) & 0XFFFF;
 +		n_idx = ck_idx * CNK_SIZE + ck_off;
 +	} else {
 +		goto finish;
 +	}
 +        
-+        /*Find corresponding next-hop in level 24*/
++        /*Find corresponding next-hop in level 32*/
 +        n = rcu_dereference(s->arr[0].N);
 +        if (likely(n[n_idx] != 0))
 +                netdev_index = n[n_idx];
 +        
-+        for (j = 0, bitshifts = 32; j < NUM_LEVELS - 1; j++, bitshifts -= 8) {
-+            /*Check if there is a longer prefix; if yes, extract 8 bits
-+             * from MSB and calculate index to N32
++        for (j = 0, bitshifts = 16; j < NUM_LEVELS - 1; j++, bitshifts -= 16) {
++            /*Check if there is a longer prefix; if yes, extract more 16 bits
++             * from MSB and calculate index to N48, N64,..
 +             */
 +            ck = rcu_dereference(s->arr[j].CK);
 +            part_idx = ck_off / 64;
@@ -900,7 +901,7 @@ index 0000000..e7cd252
 +                    c_idx = ck[ck_idx].start_index[part_idx] +
 +                            POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
 +                    ck_idx = c[c_idx] - 1;
-+                    ck_off = (key >> bitshifts) & 0XFF;
++                    ck_off = (key >> bitshifts) & 0XFFFF;
 +                    n_idx = ck_idx * CNK_SIZE + ck_off;
 +            } else {
 +                    goto finish;
