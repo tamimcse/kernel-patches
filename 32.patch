@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..0de424b 100644
+index 3d49305..147a110 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,80 @@
+@@ -40,6 +40,66 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -40,15 +40,6 @@ index 3d49305..0de424b 100644
 +	 * index for each part.
 +	 */
 +	u64 start_index[PARTS];
-+};
-+
-+struct level {
-+	u8 prefix_len; 
-+	u8 __rcu *N;
-+	u8 __rcu *P;
-+	struct chunk __rcu *CK;
-+	u16 __rcu *C;
-+	u32 cnk_count;/*Number of chunks in level 24*/
 +};
 +
 +struct sail {
@@ -78,9 +69,6 @@ index 3d49305..0de424b 100644
 +	u8 __rcu *N64;
 +	u8 __rcu *P64;
 +        u32 cnk64_count;/*Number of chunks in level 48*/
-+        
-+        /*level 24, 32, 40, 48, 56, 64*/
-+        struct level arr[NUM_LEVELS];
 +
 +	/*Index to this array is stored in N16, N24 and N32*/
 +	struct net_device	*netdevs[NETDEV_COUNT_MAX];
@@ -90,8 +78,6 @@ index 3d49305..0de424b 100644
 +};
 +
 +int sail_insert(struct sail *s, u64 key, u8 prefix_len, struct net_device *dev);
-+int sail_delete(struct sail *s, u64 key, u8 prefix_len);
-+int sail_flush(struct sail *s);
 +int sail_lookup(const struct sail *s, const u64 dest, struct net_device **dev);
 +#endif
 +
@@ -99,7 +85,7 @@ index 3d49305..0de424b 100644
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +416,10 @@ struct fib6_table {
+@@ -342,6 +402,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -146,10 +132,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..274b1f5
+index 0000000..39a783d
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,857 @@
+@@ -0,0 +1,699 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -614,30 +600,8 @@ index 0000000..274b1f5
 +                RCU_INIT_POINTER(s->C48, c48);
 +
 +                RCU_INIT_POINTER(s->N64, n64);
-+                RCU_INIT_POINTER(s->P64, p64);                
++                RCU_INIT_POINTER(s->P64, p64); 
 +                
-+                for (j = 0, k = 32; j < NUM_LEVELS; j++, k += 16) {
-+                    n = kcalloc(ARR_SIZE, sizeof(*n), GFP_ATOMIC);
-+                    p = kcalloc(ARR_SIZE, sizeof(*p), GFP_ATOMIC);
-+                    ck = kcalloc(NUM_CHUNKS, sizeof(*ck), GFP_ATOMIC);
-+                    c = kcalloc(C_SIZE, sizeof(*c), GFP_ATOMIC);
-+                    
-+                    if (!n || !p || !ck || !c) {
-+                        pr_err("Out of memory while preallocating  SAIL");
-+                        kfree(n);
-+                        kfree(p);
-+                        kfree(ck);
-+                        kfree(c);
-+                        goto error;
-+                    }
-+                    
-+                    RCU_INIT_POINTER(s->arr[j].N, n);
-+                    RCU_INIT_POINTER(s->arr[j].P, p);
-+                    RCU_INIT_POINTER(s->arr[j].CK, ck);
-+                    RCU_INIT_POINTER(s->arr[j].C, c);
-+                    s->arr[j].prefix_len = k;
-+                }
-+
 +//		synchronize_rcu();
 +	}
 +
@@ -672,7 +636,7 @@ index 0000000..274b1f5
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = chunk_insert(s->arr[0].N, s->arr[0].P, s->arr[0].CK, &s->arr[0].cnk_count, chunk_id);
++		err = chunk_insert(s->N32, s->P32, s->CK32, &s->cnk32_count, chunk_id);
 +		if (err)
 +			goto error;
 +		/*Step 3*/
@@ -691,10 +655,10 @@ index 0000000..274b1f5
 +		num_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < num_leafs; i++) {
 +			/*Longer prefix exists*/
-+                        if (s->arr[0].P[n_idx + i] > prefix_len)
++                        if (s->P32[n_idx + i] > prefix_len)
 +                                continue;
-+                        s->arr[0].N[n_idx + i] = netdev_index;
-+                        s->arr[0].P[n_idx + i] = prefix_len;
++                        s->N32[n_idx + i] = netdev_index;
++                        s->P32[n_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
@@ -781,161 +745,6 @@ index 0000000..274b1f5
 +	return err;
 +}
 +
-+int sail_delete(struct sail *s, u64 key, u8 prefix_len)
-+{
-+	int i, j;
-+        u8 bitshifts;
-+	u32 n16_idx;/*Index to N16, P16 and C16*/
-+        u16 ck_idx;
-+        u64 ck_off;
-+        u32 n_idx;
-+	u32 consecutive_leafs;
-+	int err = 0;
-+	u32 ck_id;
-+	u8 part_idx, part_off;
-+
-+	spin_lock(&s->lock);
-+
-+	/* Simply ignore */
-+	if (prefix_len == 0 || !s->N16)
-+		goto error;
-+
-+	/*Eextract 16 bits from LSB.*/
-+	n16_idx = key >> 48;
-+
-+	if (prefix_len <= 16) {
-+		/*Level pushing*/
-+		consecutive_leafs = 1U << (16 - prefix_len);
-+		for (i = 0; i < consecutive_leafs; i++) {
-+			/*Prefix len doesn't match*/
-+			if (s->P16[n16_idx + i] != prefix_len)
-+				continue;
-+			s->N16[n16_idx + i] = 0;
-+			s->P16[n16_idx + i] = 0;
-+		}
-+		goto finish;
-+	}
-+
-+	/* The prefix_len is 17~32 but no chunk for the prefix*/
-+	if (s->C16[n16_idx] == 0)
-+		goto error;
-+
-+	ck_idx = s->C16[n16_idx] - 1;
-+	ck_off = ((key >> 40) & 0XFF);/*Extract bit 17~24 from the prefix*/
-+	n_idx = ck_idx * CNK_SIZE + ck_off;
-+
-+	if (prefix_len <= 24) {
-+		/*Level pushing*/
-+		consecutive_leafs = 1U << (24 - prefix_len);
-+		for (i = 0; i < consecutive_leafs; i++) {
-+			/*Prefix len doesn't match*/
-+                        if (s->arr[0].P[n_idx + i] > prefix_len)    
-+				continue;
-+			s->arr[0].N[n_idx + i] = 0;
-+			s->arr[0].P[n_idx + i] = 0;
-+		}
-+		if (is_chunk_unused(s->arr[0].N, &s->arr[0].CK[ck_idx],
-+					     s->C16[n16_idx])) {
-+                        chunk_delete(s->arr[0].N, s->arr[0].P, s->arr[0].CK, &s->arr[0].cnk_count, s->C16[n16_idx]);
-+			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
-+					   s->C16[n16_idx]);
-+		}
-+		goto finish;
-+	}
-+        
-+        for (j = 1, bitshifts = 32; j < NUM_LEVELS; j++, bitshifts -= 8) {
-+            part_idx = ck_off / 64;
-+            part_off = ck_off % 64;
-+            /* The prefix_len is 25~32. but no chunk for the prefix */
-+            if (!(s->arr[j - 1].CK[ck_idx].bitmap[part_idx] & (1ULL << part_off)))
-+                    goto error;
-+
-+            ck_id = s->arr[j - 1].C[calc_c_idx(&(s->arr[j - 1].CK[ck_idx]), ck_off)];
-+            ck_idx = ck_id - 1;
-+            ck_off = (key >> bitshifts) & 0XFF;
-+            /*Extract 8 bit from MSB and calculate index to level 32*/
-+            n_idx = ck_idx * CNK_SIZE + ck_off;
-+
-+            if (prefix_len <= s->arr[j].prefix_len) {
-+                    /*Level pushing*/
-+                    consecutive_leafs = 1U << (s->arr[j].prefix_len - prefix_len);
-+
-+                    for (i = 0; i < consecutive_leafs; i++) {
-+                            /*Prefix len doesn't match*/
-+                            if (s->arr[j].P[n_idx + i] != prefix_len)
-+                                    continue;
-+                            s->arr[j].N[n_idx + i] = 0;
-+                            s->arr[j].P[n_idx + i] = 0;
-+                    }
-+                    if (is_chunk_unused(s->arr[j].N, &s->arr[j].CK[ck_idx], ck_id)) {
-+                            chunk_delete(s->arr[j].N, s->arr[j].P, s->arr[j].CK, &s->arr[j].cnk_count, ck_id);
-+                            remove_chunkid(s->arr[j-1].C, s->arr[j-1].CK, ck_idx, ck_off);
-+                    }
-+                    goto finish;
-+            }    
-+        }
-+
-+/*The prefix was not found*/
-+error:
-+	err = -ENOENT;
-+finish:
-+	spin_unlock(&s->lock);
-+	return err;
-+}
-+
-+int sail_flush(struct sail *s)
-+{
-+        int i;
-+	u8 *n16_old, *p16_old;
-+	u16 *c16_old;
-+        struct level arr[NUM_LEVELS];
-+
-+	spin_lock(&s->lock);
-+
-+	/*Save old pointers*/
-+	n16_old = s->N16;
-+	p16_old = s->P16;
-+	c16_old = s->C16;
-+        for (i = 0; i < NUM_LEVELS; i++) {
-+            arr[i].N = s->arr[i].N;
-+            arr[i].P = s->arr[i].P;
-+            arr[i].CK = s->arr[i].CK;
-+            arr[i].C = s->arr[i].C;
-+        }
-+
-+	/*Set the counter before the chunk are deleted*/
-+        for (i = 0; i < NUM_LEVELS; i++)
-+            s->arr[i].cnk_count = 0;
-+
-+	/*Set the pointers to NULL*/                    
-+	rcu_assign_pointer(s->N16, NULL);
-+	rcu_assign_pointer(s->P16, NULL);
-+	rcu_assign_pointer(s->C16, NULL);
-+        for (i = 0; i < NUM_LEVELS; i++) {
-+            rcu_assign_pointer(s->arr[i].N, NULL);
-+            rcu_assign_pointer(s->arr[i].P, NULL);
-+            rcu_assign_pointer(s->arr[i].CK, NULL);
-+            rcu_assign_pointer(s->arr[i].C, NULL);
-+        }
-+
-+	/* Wait for all references to be released */
-+	synchronize_rcu();
-+
-+	/* Deallocate old references after setting them NULL*/
-+	kfree(n16_old);
-+	kfree(p16_old);
-+	kfree(c16_old);
-+        for (i = 0; i < NUM_LEVELS; i++) {
-+            kfree(arr[i].N);
-+            kfree(arr[i].P);
-+            kfree(arr[i].CK);
-+            kfree(arr[i].C);
-+        }
-+
-+	spin_unlock(&s->lock);
-+	return 0;
-+}
-+
 +int sail_lookup(const struct sail *s, const u64 key, struct net_device **dev)
 +{
 +        int j;
@@ -975,32 +784,51 @@ index 0000000..274b1f5
 +	}
 +        
 +        /*Find corresponding next-hop in level 32*/
-+        n = rcu_dereference(s->arr[0].N);
++        n = rcu_dereference(s->N32);
++        if (likely(n[n_idx] != 0))
++                netdev_index = n[n_idx];
++
++        /*Check if there is a longer prefix; if yes, extract more 16 bits
++         * from MSB and calculate index to N48
++         */
++        ck = rcu_dereference(s->CK32);
++        part_idx = ck_off / 64;
++        part_off = ck_off % 64;
++        if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
++                c = rcu_dereference(s->C32);
++                c_idx = ck[ck_idx].start_index[part_idx] +
++                        POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
++                ck_idx = c[c_idx] - 1;
++                ck_off = (key >> 16) & 0XFFFF;
++                n_idx = ck_idx * CNK_SIZE + ck_off;
++        } else {
++                goto finish;
++        }
++
++        n = rcu_dereference(s->N48);
 +        if (likely(n[n_idx] != 0))
 +                netdev_index = n[n_idx];
 +        
-+        for (j = 0, bitshifts = 16; j < NUM_LEVELS - 1; j++, bitshifts -= 16) {
-+            /*Check if there is a longer prefix; if yes, extract more 16 bits
-+             * from MSB and calculate index to N48, N64,..
-+             */
-+            ck = rcu_dereference(s->arr[j].CK);
-+            part_idx = ck_off / 64;
-+            part_off = ck_off % 64;
-+            if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
-+                    c = rcu_dereference(s->arr[j].C);
-+                    c_idx = ck[ck_idx].start_index[part_idx] +
-+                            POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
-+                    ck_idx = c[c_idx] - 1;
-+                    ck_off = (key >> bitshifts) & 0XFFFF;
-+                    n_idx = ck_idx * CNK_SIZE + ck_off;
-+            } else {
-+                    goto finish;
-+            }
-+
-+            n = rcu_dereference(s->arr[j + 1].N);
-+            if (likely(n[n_idx] != 0))
-+                    netdev_index = n[n_idx];            
++        /*Check if there is a longer prefix; if yes, extract more 16 bits
++         * from MSB and calculate index to N64
++         */
++        ck = rcu_dereference(s->CK48);
++        part_idx = ck_off / 64;
++        part_off = ck_off % 64;
++        if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
++                c = rcu_dereference(s->C48);
++                c_idx = ck[ck_idx].start_index[part_idx] +
++                        POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
++                ck_idx = c[c_idx] - 1;
++                ck_off = key & 0XFFFF;
++                n_idx = ck_idx * CNK_SIZE + ck_off;
++        } else {
++                goto finish;
 +        }
++
++        n = rcu_dereference(s->N64);
++        if (likely(n[n_idx] != 0))
++                netdev_index = n[n_idx];
 +
 +finish:
 +	*dev = s->netdevs[netdev_index];
