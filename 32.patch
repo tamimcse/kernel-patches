@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..147a110 100644
+index 3d49305..d752f77 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,66 @@
+@@ -40,6 +40,90 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -30,6 +30,8 @@ index 3d49305..147a110 100644
 +#define NETDEV_COUNT_MAX 255
 +#define NUM_LEVELS 3
 +#define PARTS 1024
++
++/*Chunk of size 1024*/
 +struct chunk {
 +	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
 +	u64 bitmap[PARTS];
@@ -40,6 +42,20 @@ index 3d49305..147a110 100644
 +	 * index for each part.
 +	 */
 +	u64 start_index[PARTS];
++};
++
++#define SMALL 4
++/*Chunk of size 4*/
++struct chunk_small {
++	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
++	u64 bitmap[SMALL];
++	/*
++	 * Index to C24 where chunk is started. A chunk corresponds
++	 * to 256 elements. Instead of having just one start index for the
++	 * whole chunk, we divide the chunk into 4 parts and save start
++	 * index for each part.
++	 */
++	u64 start_index[SMALL];
 +};
 +
 +struct sail {
@@ -58,10 +74,18 @@ index 3d49305..147a110 100644
 +	u16 __rcu *C32;
 +	u32 cnk32_count;/*Number of chunks in level 32*/
 +
++
++	/*Level 40*/
++	u8 __rcu *N40;
++	u8 __rcu *P40;
++	struct chunk_small __rcu *CK40;
++	u16 __rcu *C40;
++	u32 cnk40_count;/*Number of chunks in level 40*/
++        
 +	/*Level 48*/
 +	u8 __rcu *N48;
 +	u8 __rcu *P48;
-+	struct chunk __rcu *CK48;
++	struct chunk_small __rcu *CK48;
 +	u16 __rcu *C48;
 +	u32 cnk48_count;/*Number of chunks in level 48*/
 +
@@ -85,7 +109,7 @@ index 3d49305..147a110 100644
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +402,10 @@ struct fib6_table {
+@@ -342,6 +426,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -132,10 +156,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..450777d
+index 0000000..62128f1
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,708 @@
+@@ -0,0 +1,962 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -165,6 +189,8 @@ index 0000000..450777d
 +/*memory preallocated for N and P array in level 24-64*/
 +#define ARR_SIZE NUM_CHUNKS * CNK_16
 +
++#define ARR_SIZE_SM C_SIZE * CNK_8
++
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
 +
@@ -173,6 +199,17 @@ index 0000000..450777d
 +
 +/*Calculate index to C24 from CK26 chunk and chunk offset */
 +static u64 calc_c_idx(struct chunk *c, u64 cnk_off)
++{
++	u8 part_idx, part_off;
++
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
++
++	return c->start_index[part_idx] +
++		POPCNT_OFF(c->bitmap[part_idx], part_off);
++}
++
++static u64 calc_c_idx_sm(struct chunk_small *c, u64 cnk_off)
 +{
 +	u8 part_idx, part_off;
 +
@@ -204,7 +241,7 @@ index 0000000..450777d
 + * starts from 1, not 0. This function increments cnk_count of sail.
 + * This is why, it is passed by reference
 + */
-+static int chunk_insert(u8 *N, u8 *P, struct chunk *CK, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
++static int chunk_insert(u8 *N, u8 *P, struct chunk *ck, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
 +{
 +	long long m;
 +
@@ -234,21 +271,74 @@ index 0000000..450777d
 +		P[m] = 0;
 +	}
 +        
-+        if (!CK)
++        if (!ck)
 +            goto finish;
 +        
 +        /*shift each chunk one step right to make
++         *space for the new one
++         */
++        m = (long long)(*cnk_count) - 1;
++        for (; m >= (chunk_id - 1); m--)
++                ck[m + 1] = ck[m];
++
++        /*Reset the newly created empty chunk*/
++        for (m = 0; m < PARTS; m++) {
++                ck[chunk_id - 1].bitmap[m] = 0;
++                ck[chunk_id - 1].start_index[m] = 0;
++        }
++
++finish:
++	++(*cnk_count);
++	return 0;
++}
++
++static int chunk_sm_insert(u8 *N, u8 *P, struct chunk_small *ck, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
++{
++	long long m;
++
++	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id");
++		return -EINVAL;
++	}
++
++	if (*cnk_count >= C_SIZE) {
++		pr_err("Cannot insert a new chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each element one step right to make
 +	 *space for the new one
 +	 */
-+	m = (long long)(*cnk_count) - 1;
-+	for (; m >= (chunk_id - 1); m--)
-+		CK[m + 1] = CK[m];
++	m = (long long)(*cnk_count) * cnk_size - 1;
++	for (; m >= (chunk_id - 1) * cnk_size; m--) {
++		N[m + cnk_size] = N[m];
++		P[m + cnk_size] = P[m];
++	}
 +
 +	/*Reset the newly created empty chunk*/
-+	for (m = 0; m < PARTS; m++) {
-+		CK[chunk_id - 1].bitmap[m] = 0;
-+		CK[chunk_id - 1].start_index[m] = 0;
++	m = (chunk_id - 1) * cnk_size;
++	for (; m < chunk_id * cnk_size; m++) {
++		N[m] = 0;
++		P[m] = 0;
 +	}
++        
++        if (!ck)
++            goto finish;
++        
++            /*shift each chunk one step right to make
++             *space for the new one
++             */
++            m = (long long)(*cnk_count) - 1;
++            for (; m >= (chunk_id - 1); m--)
++                    ck[m + 1] = ck[m];
++
++            /*Reset the newly created empty chunk*/
++            for (m = 0; m < SMALL; m++) {
++                    ck[chunk_id - 1].bitmap[m] = 0;
++                    ck[chunk_id - 1].start_index[m] = 0;
++            }
++        
++
 +finish:
 +	++(*cnk_count);
 +	return 0;
@@ -459,6 +549,52 @@ index 0000000..450777d
 +	}
 +}
 +
++/*Calculate the chunk ID for upper level based on CK and C of lower level*/
++static u16 calc_ckid_sm(struct chunk_small *ck, u16 ck_idx, u64 ck_off, u16 *c_arr)
++{
++	long long i, j;
++	long long index = 0;
++	u8 part_off, part_idx;
++//	struct chunk *c;
++
++	part_idx = ck_off / 64;
++	part_off = ck_off % 64;
++//	c = &ck[ck_idx];
++
++	/*find the index to C24 where previous chunk ID would be found*/
++	if (ck[ck_idx].bitmap[part_idx]) {
++		index = ck[ck_idx].start_index[part_idx] +
++		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;
++		if (index >= 0)
++			goto index_found;
++	}
++
++	j = part_idx - 1;
++	for (i = (long long)ck_idx; i >= 0; i--) {
++		for (; j >= 0; j--) {
++			if (ck[i].bitmap[j]) {
++				index = ck[i].start_index[j] +
++					POPCNT(ck[i].bitmap[j]) - 1;
++				goto index_found;
++			}
++		}
++		j = SMALL - 1;
++	}
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++index_found:
++	if (index >= (C_SIZE - 1)) {
++		pr_err("CK24 array is full. Cannot insert");
++		return 0;
++	} else if (c_arr[index] <= 0) {
++		pr_err("Invalid chunk ID");
++		return 0;
++	} else {
++		return c_arr[index] + 1;
++	}
++}
++
 +/*Update CK and C based on the newly inserted chunk*/
 +static int update_ck_c(struct chunk *ck, u32 ck_idx, u32 ck_off,
 +			   u16 *c, u32 cnk_count, u16 chunk_id)
@@ -523,14 +659,79 @@ index 0000000..450777d
 +	return 0;
 +}
 +
++/*Update CK and C based on the newly inserted chunk*/
++static int update_ck_sm_c(struct chunk_small *ck, u32 ck_idx, u32 ck_off,
++			   u16 *c, u32 cnk_count, u16 chunk_id)
++{
++	long long i, j;
++	u64 index = 0;
++	u8 part_idx, part_off;
++
++	part_idx = ck_off / 64;
++	part_off = ck_off % 64;
++
++	if (ck[ck_idx].bitmap[part_idx] & (1ULL << part_off)) {
++		pr_err("Error: bitmap is already set");
++		return -EINVAL;
++	}
++
++	/*find the index where Chunk ID should be copied to*/
++	if (ck[ck_idx].bitmap[part_idx]) {
++		index = ck[ck_idx].start_index[part_idx] +
++			POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
++		goto index_found;
++	}
++
++	/*Find a chunk to the left which is not empty*/
++	j = part_idx - 1;
++	for (i = (long long)ck_idx; i >= 0; i--) {
++		for (; j >= 0; j--) {
++			if (ck[i].bitmap[j]) {
++				index = ck[i].start_index[j] +
++					POPCNT(ck[i].bitmap[j]);
++				goto index_found;
++			}
++		}
++		j = SMALL - 1;
++	}
++
++index_found:
++	/* Move each element one step to the right to create a space for
++	 * the new element. Also increment each element by 1
++	 */
++	for (i = C_SIZE - 2 ; i >= (long long)index; i--)
++		c[i + 1] = (c[i] > 0) ? c[i] + 1 : c[i];
++	/*Set the new Chunk ID*/
++	c[index] = chunk_id;
++
++	/*This is the first element of this chunk*/
++	if (!ck[ck_idx].bitmap[part_idx])
++		ck[ck_idx].start_index[part_idx] = index;
++
++	ck[ck_idx].bitmap[part_idx] |= (1ULL << part_off);
++
++	/*Update offset of the chunks to the right*/
++	j = part_idx + 1;
++	for (i = (long long)ck_idx; i < cnk_count; i++) {
++		for (; j < SMALL; j++) {
++			if (ck[i].bitmap[j])
++				ck[i].start_index[j]++;
++		}
++		j = 0;
++	}
++
++	return 0;
++}
++
 +int sail_insert(struct sail *s, u64 key, u8 prefix_len, struct net_device *dev)
 +{
 +	int i, j;
 +        u8 k;
 +        u8 bitshifts;
-+	u8 *n16, *p16, *n, *p, *n32, *p32, *n48, *p48, *n64, *p64;
-+	u16 *c16, *c, *c32, *c48;
-+	struct chunk *ck, *ck32, *ck48;
++	u8 *n16, *p16, *n, *p, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
++	u16 *c16, *c, *c32, *c40, *c48;
++	struct chunk *ck, *ck32;
++        struct chunk_small *ck40, *ck48;
 +	u16 chunk_id;
 +        u32 n_idx;
 +	u64 c_idx;
@@ -560,16 +761,22 @@ index 0000000..450777d
 +                p32 = kcalloc(ARR_SIZE, sizeof(*p32), GFP_ATOMIC);
 +                ck32 = kcalloc(NUM_CHUNKS, sizeof(*ck32), GFP_ATOMIC);
 +                c32 = kcalloc(C_SIZE, sizeof(*c32), GFP_ATOMIC);
++
++                n40 = kcalloc(ARR_SIZE_SM, sizeof(*n40), GFP_ATOMIC);
++                p40 = kcalloc(ARR_SIZE_SM, sizeof(*p40), GFP_ATOMIC);
++                ck40 = kcalloc(C_SIZE, sizeof(*ck40), GFP_ATOMIC);
++                c40 = kcalloc(C_SIZE, sizeof(*c40), GFP_ATOMIC);
 +                
-+                n48 = kcalloc(ARR_SIZE, sizeof(*n48), GFP_ATOMIC);
-+                p48 = kcalloc(ARR_SIZE, sizeof(*p48), GFP_ATOMIC);
-+                ck48 = kcalloc(NUM_CHUNKS, sizeof(*ck48), GFP_ATOMIC);
++                n48 = kcalloc(ARR_SIZE_SM, sizeof(*n48), GFP_ATOMIC);
++                p48 = kcalloc(ARR_SIZE_SM, sizeof(*p48), GFP_ATOMIC);
++                ck48 = kcalloc(C_SIZE, sizeof(*ck48), GFP_ATOMIC);
 +                c48 = kcalloc(C_SIZE, sizeof(*c48), GFP_ATOMIC);
 +
 +                n64 = kcalloc(ARR_SIZE, sizeof(*n64), GFP_ATOMIC);
 +                p64 = kcalloc(ARR_SIZE, sizeof(*p64), GFP_ATOMIC);
 +                
 +		if (!n16 || !c16 || !p16 || !n32 || !p32 || !ck32 || !c32 ||
++                        !n40 || !p40 || !ck40 || !c40 || 
 +                        !n48 || !p48 || !ck48 || !c48 || !n64 || !p64) {
 +			kfree(n16);
 +			kfree(c16);
@@ -578,6 +785,10 @@ index 0000000..450777d
 +                        kfree(p32);
 +                        kfree(ck32);
 +                        kfree(c32);
++                        kfree(n40);
++                        kfree(p40);
++                        kfree(ck40);
++                        kfree(c40);
 +                        kfree(n48);
 +                        kfree(p48);
 +                        kfree(ck48);
@@ -597,6 +808,11 @@ index 0000000..450777d
 +                RCU_INIT_POINTER(s->CK32, ck32);
 +                RCU_INIT_POINTER(s->C32, c32);
 +
++                RCU_INIT_POINTER(s->N40, n40);
++                RCU_INIT_POINTER(s->P40, p40);
++                RCU_INIT_POINTER(s->CK40, ck40);
++                RCU_INIT_POINTER(s->C40, c40);
++                
 +                RCU_INIT_POINTER(s->N48, n48);
 +                RCU_INIT_POINTER(s->P48, p48);
 +                RCU_INIT_POINTER(s->CK48, ck48);
@@ -667,7 +883,8 @@ index 0000000..450777d
 +		}
 +		goto finish;
 +	}
-+        
++
++
 +        /* The length of the prefix is 33-64, but there is no chunk for
 +         * this prefix in the next level. So do the same as before
 +         */
@@ -677,9 +894,9 @@ index 0000000..450777d
 +                chunk_id = calc_ckid(s->CK32, ck_idx, ck_off, s->C32);
 +                if (!chunk_id)
 +                        goto error;
-+                err = chunk_insert(s->N48, s->P48, s->CK48, &s->cnk48_count, chunk_id, CNK_16);
++                err = chunk_sm_insert(s->N40, s->P40, s->CK40, &s->cnk40_count, chunk_id, CNK_8);
 +		if (err) {
-+                        pr_err("Could not insert chunk to level 48");
++                        pr_err("Could not insert chunk to level 40");
 +			goto error;
 +                }
 +                err = update_ck_c(s->CK32, ck_idx, ck_off,
@@ -690,9 +907,48 @@ index 0000000..450777d
 +
 +        c_idx = calc_c_idx(&(s->CK32[ck_idx]), ck_off);
 +        /*Extract 16 more bits and calculate index to level 48, 64,..*/
-+        n_idx = (s->C32[c_idx] - 1) * CNK_16 + ((key >> 16) & 0XFFFF);
++        n_idx = (s->C32[c_idx] - 1) * CNK_8 + ((key >> 24) & 0XFF);
 +        ck_idx = s->C32[c_idx] - 1;
-+        ck_off = (key >> 16) & 0XFFFF;
++        ck_off = (key >> 24) & 0XFF;
++
++        if (prefix_len <= 40) {
++                /*All the leafs in level 33~48 will be stored in level 48.*/
++                num_leafs = 1U << (40 - prefix_len);
++                for (i = 0; i < num_leafs; i++) {
++                        /*Longer prefix exists*/
++                        if (s->P40[n_idx + i] > prefix_len)
++                                continue;
++                        s->N40[n_idx + i] = netdev_index;
++                        s->P40[n_idx + i] = prefix_len;
++                }
++                goto finish;
++        }
++        
++        /* The length of the prefix is 33-64, but there is no chunk for
++         * this prefix in the next level. So do the same as before
++         */
++        part_idx = ck_off / 64;
++        part_off = ck_off % 64;
++        if (!(s->CK40[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
++                chunk_id = calc_ckid_sm(s->CK40, ck_idx, ck_off, s->C40);
++                if (!chunk_id)
++                        goto error;
++                err = chunk_sm_insert(s->N48, s->P48, s->CK48, &s->cnk48_count, chunk_id, CNK_8);
++		if (err) {
++                        pr_err("Could not insert chunk to level 48");
++			goto error;
++                }
++                err = update_ck_sm_c(s->CK40, ck_idx, ck_off,
++                                      s->C40, s->cnk40_count, chunk_id);
++                if (err)
++                        goto error;
++        }
++
++        c_idx = calc_c_idx_sm(&(s->CK40[ck_idx]), ck_off);
++        /*Extract 16 more bits and calculate index to level 48, 64,..*/
++        n_idx = (s->C40[c_idx] - 1) * CNK_8 + ((key >> 16) & 0XFF);
++        ck_idx = s->C40[c_idx] - 1;
++        ck_off = (key >> 16) & 0XFF;
 +
 +        if (prefix_len <= 48) {
 +                /*All the leafs in level 33~48 will be stored in level 48.*/
@@ -714,7 +970,7 @@ index 0000000..450777d
 +        part_idx = ck_off / 64;
 +        part_off = ck_off % 64;
 +        if (!(s->CK48[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
-+                chunk_id = calc_ckid(s->CK48, ck_idx, ck_off, s->C48);
++                chunk_id = calc_ckid_sm(s->CK48, ck_idx, ck_off, s->C48);
 +                if (!chunk_id)
 +                        goto error;
 +                err = chunk_insert(s->N64, s->P64, NULL, &s->cnk64_count, chunk_id, CNK_16);
@@ -722,13 +978,13 @@ index 0000000..450777d
 +                        pr_err("Could not insert chunk to level 64");
 +			goto error;
 +                }
-+                err = update_ck_c(s->CK48, ck_idx, ck_off,
++                err = update_ck_sm_c(s->CK48, ck_idx, ck_off,
 +                                      s->C48, s->cnk48_count, chunk_id);
 +                if (err)
 +                        goto error;
 +        }
 +
-+        c_idx = calc_c_idx(&(s->CK48[ck_idx]), ck_off);
++        c_idx = calc_c_idx_sm(&(s->CK48[ck_idx]), ck_off);
 +        /*Extract 16 more bits and calculate index to level 48, 64,..*/
 +        n_idx = (s->C48[c_idx] - 1) * CNK_16 + (key & 0XFFFF);
 +        ck_idx = s->C32[c_idx] - 1;
@@ -760,7 +1016,8 @@ index 0000000..450777d
 +        u8 bitshifts;
 +	u8 *n16, *n;
 +	u16 *c16, *c;
-+	struct chunk *ck;
++	struct chunk *ck;        
++        struct chunk_small *ck_sm; /*Small chunk*/
 +	u8 netdev_index = s->def_nh;
 +	u16 n16_idx;/*Index to N16 and C16*/
 +	u32 n_idx;/*Index to N and C*/
@@ -808,8 +1065,29 @@ index 0000000..450777d
 +                c_idx = ck[ck_idx].start_index[part_idx] +
 +                        POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
 +                ck_idx = c[c_idx] - 1;
-+                ck_off = (key >> 16) & 0XFFFF;
-+                n_idx = ck_idx * CNK_16 + ck_off;
++                ck_off = (key >> 24) & 0XFF;
++                n_idx = ck_idx * CNK_8 + ck_off;
++        } else {
++                goto finish;
++        }
++
++        n = rcu_dereference(s->N40);
++        if (likely(n[n_idx] != 0))
++                netdev_index = n[n_idx];
++        
++        /*Check if there is a longer prefix; if yes, extract more 16 bits
++         * from MSB and calculate index to N48
++         */
++        ck_sm = rcu_dereference(s->CK40);
++        part_idx = ck_off / 64;
++        part_off = ck_off % 64;
++        if (likely(ck_sm[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
++                c = rcu_dereference(s->C40);
++                c_idx = ck_sm[ck_idx].start_index[part_idx] +
++                        POPCNT_OFF(ck_sm[ck_idx].bitmap[part_idx], part_off);
++                ck_idx = c[c_idx] - 1;
++                ck_off = (key >> 16) & 0XFF;
++                n_idx = ck_idx * CNK_8 + ck_off;
 +        } else {
 +                goto finish;
 +        }
@@ -821,13 +1099,13 @@ index 0000000..450777d
 +        /*Check if there is a longer prefix; if yes, extract more 16 bits
 +         * from MSB and calculate index to N64
 +         */
-+        ck = rcu_dereference(s->CK48);
++        ck_sm = rcu_dereference(s->CK48);
 +        part_idx = ck_off / 64;
 +        part_off = ck_off % 64;
-+        if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
++        if (likely(ck_sm[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +                c = rcu_dereference(s->C48);
-+                c_idx = ck[ck_idx].start_index[part_idx] +
-+                        POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
++                c_idx = ck_sm[ck_idx].start_index[part_idx] +
++                        POPCNT_OFF(ck_sm[ck_idx].bitmap[part_idx], part_off);
 +                ck_idx = c[c_idx] - 1;
 +                ck_off = key & 0XFFFF;
 +                n_idx = ck_idx * CNK_16 + ck_off;
