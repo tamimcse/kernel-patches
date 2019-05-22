@@ -156,10 +156,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..62128f1
+index 0000000..07db002
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,962 @@
+@@ -0,0 +1,963 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1024,7 +1024,7 @@ index 0000000..62128f1
 +	u32 ck_idx;/*Index to CK*/
 +	u64 ck_off;/*Index to CK*/
 +	u64 c_idx;/*Index to C*/
-+	u8 part_idx, part_off;
++	u32 part_idx, part_off;
 +
 +	rcu_read_lock();
 +
@@ -1060,6 +1060,7 @@ index 0000000..62128f1
 +        ck = rcu_dereference(s->CK32);
 +        part_idx = ck_off / 64;
 +        part_off = ck_off % 64;
++        
 +        if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +                c = rcu_dereference(s->C32);
 +                c_idx = ck[ck_idx].start_index[part_idx] +
@@ -1123,7 +1124,7 @@ index 0000000..62128f1
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..653a30d 100644
+index 826b14d..5b6bda5 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1230,39 +1231,39 @@ index 826b14d..653a30d 100644
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        
 +//        spin_lock(&lock_gen);
++        for (i = 0; i < NUM_TEST_CASES; i++) {
++            arr[i] = global_key;
++            if ( global_key >= 0X2001800000000000) {
++                global_key = 0X2001020000000000;
++                if (increment == 0X100000000)
++                    increment = 0X10000;
++                else if (increment == 0X10000)
++                    increment = 0X1000;
++                else 
++                    increment = 0X100000000;
++            } else { 
++                global_key += increment;
++            }
++        }                
++
 +//        for (i = 0; i < NUM_TEST_CASES; i++) {
-+//            arr[i] = global_key;
-+//            if ( global_key >= 0X2001800000000000) {
-+//                global_key = 0X2001020000000000;
-+//                if (increment == 0X100000000)
-+//                    increment = 0X10000;
-+//                else if (increment == 0X10000)
-+//                    increment = 0X1000;
-+//                else 
-+//                    increment = 0X100000000;
-+//            } else { 
-+//                global_key += increment;
-+//            }
-+//        }                
-+//
-+////        for (i = 0; i < NUM_TEST_CASES; i++) {
-+////            get_addr(&fl6->daddr, arr[i]);
-+////            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
-+////        }
-+//        
-+//        for (i = 0; i < NUM_TEST_CASES; i++) {
-+//            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
 +//            get_addr(&fl6->daddr, arr[i]);
-+//            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
-+//            if (f6i->fib6_nh.nh_dev->name && dev->name &&
-+//                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
-+//                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
-+//                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
-+//                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
-+//                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
-+//            }
++//            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
 +//        }
-+//        
++        
++        for (i = 0; i < NUM_TEST_CASES; i++) {
++            sail_lookup(&net->ipv6.fib6_main_tbl->sail, arr[i], &dev);
++            get_addr(&fl6->daddr, arr[i]);            
++            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
++            if (f6i->fib6_nh.nh_dev->name && dev->name &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
++                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
++                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
++            }
++        }
++        
 +//        spin_unlock(&lock_gen);
 +
 +#endif
