@@ -156,10 +156,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..07db002
+index 0000000..3c20133
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,963 @@
+@@ -0,0 +1,969 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -174,8 +174,14 @@ index 0000000..07db002
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Length of C array in level 24-64.*/
++/*Length of C array in level 32, 64.*/
 +#define C_SIZE 6000
++
++/*Length of C array for level 40 and 48*/
++#define C_SIZE_SMALL 65536 
++
++/*Number of small chunks*/
++#define SM_CHUNKS 16384
 +
 +/*chunk size is 2^16*/
 +#define CNK_16 65536
@@ -189,7 +195,7 @@ index 0000000..07db002
 +/*memory preallocated for N and P array in level 24-64*/
 +#define ARR_SIZE NUM_CHUNKS * CNK_16
 +
-+#define ARR_SIZE_SM C_SIZE * CNK_8
++#define ARR_SIZE_SM SM_CHUNKS * CNK_8
 +
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
@@ -301,7 +307,7 @@ index 0000000..07db002
 +		return -EINVAL;
 +	}
 +
-+	if (*cnk_count >= C_SIZE) {
++	if (*cnk_count >= SM_CHUNKS) {
 +		pr_err("Cannot insert a new chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
@@ -539,7 +545,7 @@ index 0000000..07db002
 +	return 1;
 +index_found:
 +	if (index >= (C_SIZE - 1)) {
-+		pr_err("CK24 array is full. Cannot insert");
++		pr_err("C array is full. Cannot insert");
 +		return 0;
 +	} else if (c_arr[index] <= 0) {
 +		pr_err("Invalid chunk ID");
@@ -584,8 +590,8 @@ index 0000000..07db002
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
 +index_found:
-+	if (index >= (C_SIZE - 1)) {
-+		pr_err("CK24 array is full. Cannot insert");
++	if (index >= (C_SIZE_SMALL - 1)) {
++		pr_err("C array is full. Cannot insert");
 +		return 0;
 +	} else if (c_arr[index] <= 0) {
 +		pr_err("Invalid chunk ID");
@@ -699,7 +705,7 @@ index 0000000..07db002
 +	/* Move each element one step to the right to create a space for
 +	 * the new element. Also increment each element by 1
 +	 */
-+	for (i = C_SIZE - 2 ; i >= (long long)index; i--)
++	for (i = C_SIZE_SMALL - 2 ; i >= (long long)index; i--)
 +		c[i + 1] = (c[i] > 0) ? c[i] + 1 : c[i];
 +	/*Set the new Chunk ID*/
 +	c[index] = chunk_id;
@@ -764,13 +770,13 @@ index 0000000..07db002
 +
 +                n40 = kcalloc(ARR_SIZE_SM, sizeof(*n40), GFP_ATOMIC);
 +                p40 = kcalloc(ARR_SIZE_SM, sizeof(*p40), GFP_ATOMIC);
-+                ck40 = kcalloc(C_SIZE, sizeof(*ck40), GFP_ATOMIC);
-+                c40 = kcalloc(C_SIZE, sizeof(*c40), GFP_ATOMIC);
++                ck40 = kcalloc(SM_CHUNKS, sizeof(*ck40), GFP_ATOMIC);
++                c40 = kcalloc(C_SIZE_SMALL, sizeof(*c40), GFP_ATOMIC);
 +                
 +                n48 = kcalloc(ARR_SIZE_SM, sizeof(*n48), GFP_ATOMIC);
 +                p48 = kcalloc(ARR_SIZE_SM, sizeof(*p48), GFP_ATOMIC);
-+                ck48 = kcalloc(C_SIZE, sizeof(*ck48), GFP_ATOMIC);
-+                c48 = kcalloc(C_SIZE, sizeof(*c48), GFP_ATOMIC);
++                ck48 = kcalloc(SM_CHUNKS, sizeof(*ck48), GFP_ATOMIC);
++                c48 = kcalloc(C_SIZE_SMALL, sizeof(*c48), GFP_ATOMIC);
 +
 +                n64 = kcalloc(ARR_SIZE, sizeof(*n64), GFP_ATOMIC);
 +                p64 = kcalloc(ARR_SIZE, sizeof(*p64), GFP_ATOMIC);
