@@ -156,7 +156,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..3c20133
+index 0000000..eac392c
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,969 @@
@@ -187,7 +187,7 @@ index 0000000..3c20133
 +#define CNK_16 65536
 +
 +/*chunk size is 2^8*/
-+#define CNK_8 255
++#define CNK_8 256
 +
 +/*Total number of chunks preallocated for level 24-64*/
 +#define NUM_CHUNKS 64
@@ -206,7 +206,7 @@ index 0000000..3c20133
 +/*Calculate index to C24 from CK26 chunk and chunk offset */
 +static u64 calc_c_idx(struct chunk *c, u64 cnk_off)
 +{
-+	u8 part_idx, part_off;
++	u32 part_idx, part_off;
 +
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
@@ -514,13 +514,13 @@ index 0000000..3c20133
 +{
 +	long long i, j;
 +	long long index = 0;
-+	u8 part_off, part_idx;
++	u32 part_off, part_idx;
 +//	struct chunk *c;
 +
 +	part_idx = ck_off / 64;
 +	part_off = ck_off % 64;
 +//	c = &ck[ck_idx];
-+
++        
 +	/*find the index to C24 where previous chunk ID would be found*/
 +	if (ck[ck_idx].bitmap[part_idx]) {
 +		index = ck[ck_idx].start_index[part_idx] +
@@ -529,7 +529,7 @@ index 0000000..3c20133
 +			goto index_found;
 +	}
 +
-+	j = part_idx - 1;
++	j = (long long)part_idx - 1;
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
@@ -575,7 +575,7 @@ index 0000000..3c20133
 +			goto index_found;
 +	}
 +
-+	j = part_idx - 1;
++	j = (long long)part_idx - 1;
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
@@ -607,7 +607,7 @@ index 0000000..3c20133
 +{
 +	long long i, j;
 +	u64 index = 0;
-+	u8 part_idx, part_off;
++	u32 part_idx, part_off;
 +
 +	part_idx = ck_off / 64;
 +	part_off = ck_off % 64;
@@ -625,7 +625,7 @@ index 0000000..3c20133
 +	}
 +
 +	/*Find a chunk to the left which is not empty*/
-+	j = part_idx - 1;
++	j = (long long)part_idx - 1;
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
@@ -689,7 +689,7 @@ index 0000000..3c20133
 +	}
 +
 +	/*Find a chunk to the left which is not empty*/
-+	j = part_idx - 1;
++	j = (long long)part_idx - 1;
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
@@ -744,7 +744,7 @@ index 0000000..3c20133
 +        u16 ck_idx;
 +        u64 ck_off;
 +	u16 n16_idx;/*Index to N16, P16 and C16*/	     
-+	u8 part_idx, part_off;
++	u32 part_idx, part_off;
 +	u32 num_leafs;/*Number of leafs need to be inserted for this prefix*/
 +	u8 netdev_index = get_netdev_index(s, dev);
 +	int err = 0;
