@@ -153,10 +153,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..f687c76
+index 0000000..18bde73
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,797 @@
+@@ -0,0 +1,777 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -171,11 +171,8 @@ index 0000000..f687c76
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Length of C array in level 32, 64.*/
-+#define C_SIZE 6000
-+
-+/*Length of C array for level 40 and 48*/
-+#define C_SIZE_SMALL 65536 
++/*Total number of chunks preallocated for level 24-64*/
++#define NUM_CHUNKS 64
 +
 +/*Number of small chunks*/
 +#define SM_CHUNKS 16384
@@ -185,9 +182,6 @@ index 0000000..f687c76
 +
 +/*chunk size is 2^8*/
 +#define CNK_8 256
-+
-+/*Total number of chunks preallocated for level 24-64*/
-+#define NUM_CHUNKS 64
 +
 +/*memory preallocated for N and P array in level 24-64*/
 +#define ARR_SIZE NUM_CHUNKS * CNK_16
@@ -201,7 +195,7 @@ index 0000000..f687c76
 +#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*Calculate index to C24 from CK26 chunk and chunk offset */
-+static u64 calc_c_idx(struct chunk *c, u64 cnk_off)
++static u64 calc_ck_idx(struct chunk *c, u64 cnk_off)
 +{
 +	u32 part_idx, part_off;
 +
@@ -212,7 +206,7 @@ index 0000000..f687c76
 +		POPCNT_OFF(c->bitmap[part_idx], part_off);
 +}
 +
-+static u64 calc_c_idx_sm(struct chunk_small *c, u64 cnk_off)
++static u64 calc_ck_idx_sm(struct chunk_small *c, u64 cnk_off)
 +{
 +	u8 part_idx, part_off;
 +
@@ -404,7 +398,7 @@ index 0000000..f687c76
 +		index = ck[ck_idx].start_index[part_idx] +
 +		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;
 +		if (index >= 0)
-+			goto index_found;
++			return index + 2;
 +	}
 +
 +	j = (long long)part_idx - 1;
@@ -413,7 +407,7 @@ index 0000000..f687c76
 +			if (ck[i].bitmap[j]) {
 +				index = ck[i].start_index[j] +
 +					POPCNT(ck[i].bitmap[j]) - 1;
-+				goto index_found;
++				return index + 2;
 +			}
 +		}
 +		j = PARTS - 1;
@@ -421,13 +415,6 @@ index 0000000..f687c76
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
-+index_found:
-+	if (index >= (C_SIZE - 1)) {
-+		pr_err("C array is full. Cannot insert");
-+		return 0;
-+	} else {
-+		return index + 2;
-+	}
 +}
 +
 +/*Calculate the chunk ID for upper level based on CK and C of lower level*/
@@ -445,7 +432,7 @@ index 0000000..f687c76
 +		index = ck[ck_idx].start_index[part_idx] +
 +		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;                        
 +		if (index >= 0)
-+			goto index_found;
++			return index + 2;
 +	}       
 +
 +	j = (long long)part_idx - 1;
@@ -454,7 +441,7 @@ index 0000000..f687c76
 +			if (ck[i].bitmap[j]) {
 +				index = ck[i].start_index[j] +
 +					POPCNT(ck[i].bitmap[j]) - 1;
-+				goto index_found;
++				return index + 2;
 +			}
 +		}
 +		j = SMALL - 1;
@@ -462,13 +449,6 @@ index 0000000..f687c76
 +        
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
-+index_found:
-+	if (index >= (C_SIZE_SMALL - 1)) {
-+		pr_err("C array is full (SM). Cannot insert");
-+		return 0;
-+	} else {
-+		return index + 2;
-+	}
 +}
 +
 +/*Update CK and C based on the newly inserted chunk*/
@@ -751,7 +731,7 @@ index 0000000..f687c76
 +                if (err)
 +                        goto error;
 +        }
-+        ck_idx = calc_c_idx(&(s->CK32[ck_idx]), ck_off);
++        ck_idx = calc_ck_idx(&(s->CK32[ck_idx]), ck_off);
 +        ck_off = (key >> 24) & 0XFF;
 +        /*Extract 16 more bits and calculate index to level 48, 64,..*/
 +        n_idx = ck_idx * CNK_8 + ck_off;
@@ -788,7 +768,7 @@ index 0000000..f687c76
 +                        goto error;
 +        }
 +        
-+        ck_idx = calc_c_idx_sm(&(s->CK40[ck_idx]), ck_off);
++        ck_idx = calc_ck_idx_sm(&(s->CK40[ck_idx]), ck_off);
 +        ck_off = (key >> 16) & 0XFF;
 +        /*Extract 16 more bits and calculate index to level 48, 64,..*/
 +        n_idx = ck_idx * CNK_8 + ck_off;        
@@ -826,7 +806,7 @@ index 0000000..f687c76
 +        }
 +
 +        /*Extract 16 more bits and calculate index to level 48, 64,..*/
-+        ck_idx = calc_c_idx_sm(&(s->CK48[ck_idx]), ck_off);
++        ck_idx = calc_ck_idx_sm(&(s->CK48[ck_idx]), ck_off);
 +        ck_off = key & 0XFFFF;
 +        n_idx = ck_idx * CNK_16 + ck_off;
 +
