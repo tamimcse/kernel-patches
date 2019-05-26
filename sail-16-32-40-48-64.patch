@@ -15,7 +15,7 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..677f608 100644
+index 3d49305..15cba8e 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
 @@ -40,6 +40,87 @@
@@ -41,7 +41,7 @@ index 3d49305..677f608 100644
 +	 * whole chunk, we divide the chunk into 4 parts and save start
 +	 * index for each part.
 +	 */
-+	u64 start_index[PARTS];
++	u16 popcnt[PARTS];
 +};
 +
 +#define SMALL 4
@@ -55,7 +55,7 @@ index 3d49305..677f608 100644
 +	 * whole chunk, we divide the chunk into 4 parts and save start
 +	 * index for each part.
 +	 */
-+	u64 start_index[SMALL];
++	u16 popcnt[SMALL];
 +};
 +
 +struct sail {
@@ -153,10 +153,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..18bde73
+index 0000000..347a78c
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,777 @@
+@@ -0,0 +1,806 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -195,25 +195,25 @@ index 0000000..18bde73
 +#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*Calculate index to C24 from CK26 chunk and chunk offset */
-+static u64 calc_ck_idx(struct chunk *c, u64 cnk_off)
++static u16 calc_ck_idx(struct chunk *c, u64 cnk_off)
 +{
 +	u32 part_idx, part_off;
 +
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	return c->start_index[part_idx] +
++	return c->popcnt[part_idx] +
 +		POPCNT_OFF(c->bitmap[part_idx], part_off);
 +}
 +
-+static u64 calc_ck_idx_sm(struct chunk_small *c, u64 cnk_off)
++static u16 calc_ck_idx_sm(struct chunk_small *c, u64 cnk_off)
 +{
 +	u8 part_idx, part_off;
 +
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	return c->start_index[part_idx] +
++	return c->popcnt[part_idx] +
 +		POPCNT_OFF(c->bitmap[part_idx], part_off);
 +}
 +
@@ -281,7 +281,7 @@ index 0000000..18bde73
 +        /*Reset the newly created empty chunk*/
 +        for (m = 0; m < PARTS; m++) {
 +                ck[chunk_id - 1].bitmap[m] = 0;
-+                ck[chunk_id - 1].start_index[m] = 0;
++                ck[chunk_id - 1].popcnt[m] = 0;
 +        }
 +
 +finish:
@@ -332,7 +332,7 @@ index 0000000..18bde73
 +            /*Reset the newly created empty chunk*/
 +            for (m = 0; m < SMALL; m++) {
 +                    ck[chunk_id - 1].bitmap[m] = 0;
-+                    ck[chunk_id - 1].start_index[m] = 0;
++                    ck[chunk_id - 1].popcnt[m] = 0;
 +            }
 +        
 +
@@ -395,8 +395,10 @@ index 0000000..18bde73
 +        
 +	/*find the index to C24 where previous chunk ID would be found*/
 +	if (ck[ck_idx].bitmap[part_idx]) {
-+		index = ck[ck_idx].start_index[part_idx] +
++		index = ck[ck_idx].popcnt[part_idx] +
 +		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;
++                if (index >= CNK_16 - 2)
++                    goto err;
 +		if (index >= 0)
 +			return index + 2;
 +	}
@@ -405,8 +407,10 @@ index 0000000..18bde73
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
-+				index = ck[i].start_index[j] +
++				index = ck[i].popcnt[j] +
 +					POPCNT(ck[i].bitmap[j]) - 1;
++                                if (index >= CNK_16 - 2)
++                                    goto err;
 +				return index + 2;
 +			}
 +		}
@@ -415,6 +419,9 @@ index 0000000..18bde73
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
++err:
++        pr_err("Invalid index");
++        return -EINVAL;
 +}
 +
 +/*Calculate the chunk ID for upper level based on CK and C of lower level*/
@@ -429,8 +436,10 @@ index 0000000..18bde73
 +        
 +	/*find the index to C24 where previous chunk ID would be found*/
 +	if (ck[ck_idx].bitmap[part_idx]) {
-+		index = ck[ck_idx].start_index[part_idx] +
-+		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;                        
++		index = ck[ck_idx].popcnt[part_idx] +
++		    POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off) - 1;
++                if (index >= CNK_16 - 2)
++                    goto err;
 +		if (index >= 0)
 +			return index + 2;
 +	}       
@@ -439,8 +448,10 @@ index 0000000..18bde73
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
-+				index = ck[i].start_index[j] +
++				index = ck[i].popcnt[j] +
 +					POPCNT(ck[i].bitmap[j]) - 1;
++                                if (index >= CNK_16 - 2)
++                                    goto err;
 +				return index + 2;
 +			}
 +		}
@@ -449,6 +460,9 @@ index 0000000..18bde73
 +        
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
++err:
++        pr_err("Invalid index");
++        return -EINVAL;
 +}
 +
 +/*Update CK and C based on the newly inserted chunk*/
@@ -468,8 +482,10 @@ index 0000000..18bde73
 +
 +	/*find the index where Chunk ID should be copied to*/
 +	if (ck[ck_idx].bitmap[part_idx]) {
-+		index = ck[ck_idx].start_index[part_idx] +
++		index = ck[ck_idx].popcnt[part_idx] +
 +			POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
++                if (index >= CNK_16)
++                    goto err;
 +		goto index_found;
 +	}
 +
@@ -478,8 +494,10 @@ index 0000000..18bde73
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
-+				index = ck[i].start_index[j] +
++				index = ck[i].popcnt[j] +
 +					POPCNT(ck[i].bitmap[j]);
++                                if (index >= CNK_16)
++                                    goto err;
 +				goto index_found;
 +			}
 +		}
@@ -490,7 +508,7 @@ index 0000000..18bde73
 +
 +	/*This is the first element of this chunk*/
 +	if (!ck[ck_idx].bitmap[part_idx])
-+		ck[ck_idx].start_index[part_idx] = index;
++		ck[ck_idx].popcnt[part_idx] = (u16)index;
 +
 +	ck[ck_idx].bitmap[part_idx] |= (1ULL << part_off);
 +
@@ -499,12 +517,15 @@ index 0000000..18bde73
 +	for (i = (long long)ck_idx; i < cnk_count; i++) {
 +		for (; j < PARTS; j++) {
 +			if (ck[i].bitmap[j])
-+				ck[i].start_index[j]++;
++				ck[i].popcnt[j]++;
 +		}
 +		j = 0;
 +	}
 +
 +	return 0;
++err:
++        pr_err("Invalid index");
++        return -EINVAL;
 +}
 +
 +/*Update CK and C based on the newly inserted chunk*/
@@ -524,8 +545,11 @@ index 0000000..18bde73
 +
 +	/*find the index where Chunk ID should be copied to*/
 +	if (ck[ck_idx].bitmap[part_idx]) {
-+		index = ck[ck_idx].start_index[part_idx] +
++		index = ck[ck_idx].popcnt[part_idx] +
 +			POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
++                if (index >= CNK_16)
++                    goto err;
++                    
 +		goto index_found;
 +	}
 +
@@ -534,8 +558,10 @@ index 0000000..18bde73
 +	for (i = (long long)ck_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
 +			if (ck[i].bitmap[j]) {
-+				index = ck[i].start_index[j] +
++				index = ck[i].popcnt[j] +
 +					POPCNT(ck[i].bitmap[j]);
++                                if (index >= CNK_16)
++                                    goto err;
 +				goto index_found;
 +			}
 +		}
@@ -546,7 +572,7 @@ index 0000000..18bde73
 +
 +	/*This is the first element of this chunk*/
 +	if (!ck[ck_idx].bitmap[part_idx])
-+		ck[ck_idx].start_index[part_idx] = index;
++		ck[ck_idx].popcnt[part_idx] = (u16)index;
 +
 +	ck[ck_idx].bitmap[part_idx] |= (1ULL << part_off);
 +
@@ -555,12 +581,15 @@ index 0000000..18bde73
 +	for (i = (long long)ck_idx; i < cnk_count; i++) {
 +		for (; j < SMALL; j++) {
 +			if (ck[i].bitmap[j])
-+				ck[i].start_index[j]++;
++				ck[i].popcnt[j]++;
 +		}
 +		j = 0;
 +	}
 +
 +	return 0;
++err:
++        pr_err("Invalid index");
++        return -EINVAL;
 +}
 +
 +int sail_insert(struct sail *s, u64 key, u8 prefix_len, struct net_device *dev)
@@ -879,7 +908,7 @@ index 0000000..18bde73
 +        part_off = ck_off % 64;
 +        
 +        if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
-+                ck_idx = ck[ck_idx].start_index[part_idx] +
++                ck_idx = ck[ck_idx].popcnt[part_idx] +
 +                        POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
 +                ck_off = (key >> 24) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
@@ -898,7 +927,7 @@ index 0000000..18bde73
 +        part_idx = ck_off / 64;
 +        part_off = ck_off % 64;
 +        if (likely(ck_sm[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
-+                ck_idx = ck_sm[ck_idx].start_index[part_idx] +
++                ck_idx = ck_sm[ck_idx].popcnt[part_idx] +
 +                        POPCNT_OFF(ck_sm[ck_idx].bitmap[part_idx], part_off);
 +                ck_off = (key >> 16) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
@@ -917,7 +946,7 @@ index 0000000..18bde73
 +        part_idx = ck_off / 64;
 +        part_off = ck_off % 64;
 +        if (likely(ck_sm[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
-+                ck_idx = ck_sm[ck_idx].start_index[part_idx] +
++                ck_idx = ck_sm[ck_idx].popcnt[part_idx] +
 +                        POPCNT_OFF(ck_sm[ck_idx].bitmap[part_idx], part_off);
 +                ck_off = key & 0XFFFF;
 +                n_idx = ck_idx * CNK_16 + ck_off;
