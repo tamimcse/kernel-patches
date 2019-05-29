@@ -15,10 +15,10 @@ index b22e7fd..969e625 100644
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
-index 3d49305..15cba8e 100644
+index 3d49305..f214f63 100644
 --- a/include/net/ip6_fib.h
 +++ b/include/net/ip6_fib.h
-@@ -40,6 +40,87 @@
+@@ -40,6 +40,98 @@
  struct rt6_info;
  struct fib6_info;
  
@@ -42,6 +42,16 @@ index 3d49305..15cba8e 100644
 +	 * index for each part.
 +	 */
 +	u16 popcnt[PARTS];
++        
++	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
++	u64 n_bitmap[PARTS];
++	/*
++	 * Index to C24 where chunk is started. A chunk corresponds
++	 * to 256 elements. Instead of having just one start index for the
++	 * whole chunk, we divide the chunk into 4 parts and save start
++	 * index for each part.
++	 */
++	u16 n_popcnt[PARTS];
 +};
 +
 +#define SMALL 4
@@ -72,6 +82,7 @@ index 3d49305..15cba8e 100644
 +	u8 __rcu *P32;
 +	struct chunk __rcu *CK32;
 +	u32 cnk32_count;/*Number of chunks in level 32*/
++        u64 n32_cnt;/*Number of elements in N32*/
 +
 +
 +	/*Level 40*/
@@ -106,7 +117,7 @@ index 3d49305..15cba8e 100644
  struct fib6_config {
  	u32		fc_table;
  	u32		fc_metric;
-@@ -342,6 +423,10 @@ struct fib6_table {
+@@ -342,6 +434,10 @@ struct fib6_table {
  	struct fib6_node	tb6_root;
  	struct inet_peer_base	tb6_peers;
  	unsigned int		flags;
@@ -153,10 +164,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..347a78c
+index 0000000..5698ba9
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,806 @@
+@@ -0,0 +1,849 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -204,6 +215,18 @@ index 0000000..347a78c
 +
 +	return c->popcnt[part_idx] +
 +		POPCNT_OFF(c->bitmap[part_idx], part_off);
++}
++
++/*Calculate index to N from CK26 chunk and chunk offset */
++static u16 calc_n_idx(struct chunk *c, u64 cnk_off)
++{
++	u32 part_idx, part_off;
++
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
++
++	return c->n_popcnt[part_idx] +
++		POPCNT_OFF(c->n_bitmap[part_idx], part_off);
 +}
 +
 +static u16 calc_ck_idx_sm(struct chunk_small *c, u64 cnk_off)
@@ -594,7 +617,7 @@ index 0000000..347a78c
 +
 +int sail_insert(struct sail *s, u64 key, u8 prefix_len, struct net_device *dev)
 +{
-+	int i;
++	int i, j;
 +	u8 *n16, *p16, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
 +	u16 *c16;
 +	struct chunk *ck32;
@@ -608,6 +631,9 @@ index 0000000..347a78c
 +	u32 num_leafs;/*Number of leafs need to be inserted for this prefix*/
 +	u8 netdev_index = get_netdev_index(s, dev);
 +	int err = 0;
++        u64 bitmap;
++        u64 tmp;
++        u32 new_prefixes = 0;
 +
 +	spin_lock(&s->lock);
 +
@@ -666,6 +692,7 @@ index 0000000..347a78c
 +                RCU_INIT_POINTER(s->N32, n32);
 +                RCU_INIT_POINTER(s->P32, p32);
 +                RCU_INIT_POINTER(s->CK32, ck32);
++                s->n32_cnt = 0;
 +
 +                RCU_INIT_POINTER(s->N40, n40);
 +                RCU_INIT_POINTER(s->P40, p40);
@@ -724,20 +751,46 @@ index 0000000..347a78c
 +	}
 +
 +	/*Extract bit 17~32 from MSB and calculate index to level 32*/
-+	n_idx = (s->C16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF);
++//	n_idx = (s->C16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF);
 +	ck_idx = s->C16[n16_idx] - 1;
 +	ck_off = (key >> 32) & 0XFFFF;
-+
++        part_idx = ck_off / 64;
++        part_off = ck_off % 64;
++        
 +	if (prefix_len <= 32) {
 +		/*All the leafs in level 17~32 will be stored in level 32.*/
 +		num_leafs = 1U << (32 - prefix_len);
-+		for (i = 0; i < num_leafs; i++) {
++		for (i = 0, tmp = 1ULL << part_off; i < num_leafs; i++, tmp <<= 1) {
++                    n_idx = calc_n_idx(&(s->CK32[ck_idx]), ck_off + i);
++                    if (s->CK32[ck_idx].n_bitmap[part_idx] & tmp) {                        
 +			/*Longer prefix exists*/
-+                        if (s->P32[n_idx + i] > prefix_len)
++                        if (s->P32[n_idx] > prefix_len)
 +                                continue;
-+                        s->N32[n_idx + i] = netdev_index;
-+                        s->P32[n_idx + i] = prefix_len;
++                        s->N32[n_idx] = netdev_index;
++                        s->P32[n_idx] = prefix_len;
++                    } else {
++                        if (n_idx >= ARR_SIZE)
++                            goto error;
++                        /*FIXME: If this loop goes for long, that breaks the kerenel*/
++                        for (j = (int)s->n32_cnt - 1; j >= (int)n_idx; j--) {
++                                s->N32[j + 1] = s->N32[j];
++                                s->P32[j + 1] = s->P32[j];
++                        }
++                        s->N32[n_idx] = netdev_index;
++                        s->P32[n_idx] = prefix_len;
++                        new_prefixes++;
++                        s->n32_cnt++;
++                    }
 +		}
++                j = part_idx + 1;
++                for (i = ck_idx; i < NUM_CHUNKS; i++) {
++                    for (; j < PARTS; j++) {
++                        s->CK32[i].n_popcnt[j] += new_prefixes;
++                    }
++                    j = 0;
++                }
++                bitmap = ((1ULL << num_leafs) - 1) << part_off;
++                s->CK32[ck_idx].n_bitmap[part_idx] |= bitmap;
 +		goto finish;
 +	}
 +
@@ -745,8 +798,7 @@ index 0000000..347a78c
 +        /* The length of the prefix is 33-64, but there is no chunk for
 +         * this prefix in the next level. So do the same as before
 +         */
-+        part_idx = ck_off / 64;
-+        part_off = ck_off % 64;
++
 +        if (!(s->CK32[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +                chunk_id = calc_ckid(s->CK32, ck_idx, ck_off);
 +                if (!chunk_id)
@@ -894,11 +946,6 @@ index 0000000..347a78c
 +	} else {
 +		goto finish;
 +	}
-+        
-+        /*Find corresponding next-hop in level 32*/
-+        n = rcu_dereference(s->N32);
-+        if (likely(n[n_idx] != 0))
-+                netdev_index = n[n_idx];
 +
 +        /*Check if there is a longer prefix; if yes, extract more 16 bits
 +         * from MSB and calculate index to N48
@@ -906,7 +953,14 @@ index 0000000..347a78c
 +        ck = rcu_dereference(s->CK32);
 +        part_idx = ck_off / 64;
 +        part_off = ck_off % 64;
-+        
++
++        /*Find corresponding next-hop in level 32*/
++        if (s->CK32[ck_idx].n_bitmap[part_idx] & (1ULL << part_off)) {
++            n = rcu_dereference(s->N32);
++            n_idx = calc_n_idx(&(s->CK32[ck_idx]), ck_off);
++            netdev_index = n[n_idx];      
++        }
++
 +        if (likely(ck[ck_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +                ck_idx = ck[ck_idx].popcnt[part_idx] +
 +                        POPCNT_OFF(ck[ck_idx].bitmap[part_idx], part_off);
@@ -964,7 +1018,7 @@ index 0000000..347a78c
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..5b6bda5 100644
+index 826b14d..dc6f893 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1064,13 +1118,14 @@ index 826b14d..5b6bda5 100644
  
  	strict |= flags & RT6_LOOKUP_F_IFACE;
  	strict |= flags & RT6_LOOKUP_F_IGNORE_LINKSTATE;
-@@ -1869,6 +1915,45 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+@@ -1869,6 +1915,46 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
  
  	rcu_read_lock();
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +        
 +//        spin_lock(&lock_gen);
++        
 +        for (i = 0; i < NUM_TEST_CASES; i++) {
 +            arr[i] = global_key;
 +            if ( global_key >= 0X2001800000000000) {
@@ -1110,7 +1165,7 @@ index 826b14d..5b6bda5 100644
  	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
  	if (f6i->fib6_nsiblings)
  		f6i = fib6_multipath_select(net, f6i, fl6, oif, skb, strict);
-@@ -3179,7 +3264,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+@@ -3179,7 +3265,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
  	struct net *net = info->nl_net;
  	struct fib6_table *table;
  	int err;
