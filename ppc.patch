@@ -178,7 +178,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..84d97ab
+index 0000000..4750bff
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,958 @@
@@ -965,7 +965,7 @@ index 0000000..84d97ab
 +                chunk_id = calc_ckid_sm(s->CK48, ck_idx, ck_off);
 +                if (!chunk_id)
 +                        goto error;
-+                err = chunk_insert(s->N64, s->P64, NULL, &s->cnk64_count, chunk_id, CNK_16);
++                err = chunk_last_insert(s->N64, s->P64, s->CK64, &s->cnk64_count, chunk_id, CNK_16);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 64");
 +			goto error;
