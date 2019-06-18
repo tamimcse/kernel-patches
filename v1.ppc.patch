@@ -185,10 +185,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..af0208f
+index 0000000..73d6bb1
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1050 @@
+@@ -0,0 +1,1098 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -206,8 +206,11 @@ index 0000000..af0208f
 +/*Total number of chunks preallocated for level 24-64*/
 +#define NUM_CHUNKS 64
 +
++/*As we group each 64 elements, each chunk corresponds to 65536/64 elements*/
++#define NUM_ELEMS_PER_CHUNK 1024
++
 +/*The size of B and C array*/
-+#define BC_SIZE 65536
++#define BC_SIZE NUM_CHUNKS * 64
 +
 +/*Number of chunks in the last level (level 64)*/
 +#define NUM_CHUNKS_LAST 400
@@ -299,6 +302,51 @@ index 0000000..af0208f
 +	/*If the net_device is not previously seen, then add it to the array*/
 +	s->netdevs[s->netdev_count++] = dev;
 +	return s->netdev_count - 1;
++}
++
++static void reset_group (struct chunk *g)
++{
++    g->bitmap = 0;
++    g->popcnt = 0;
++}
++
++/* Insert a new chunk to a level at chunk_id-1. Note that Chunk ID
++ * starts from 1, not 0. This function increments cnk_count of sail.
++ * This is why, it is passed by reference
++ */
++static int cnk_insert(struct chunk *B, struct chunk *C, u32 *cnk_count, u16 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id");
++		return -EINVAL;
++	}
++
++	if (*cnk_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a new chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++	m = (long long)(*cnk_count) * NUM_ELEMS_PER_CHUNK - 1;
++	for (; m >= (chunk_id - 1) * NUM_ELEMS_PER_CHUNK; m--) {
++		B[m + NUM_ELEMS_PER_CHUNK] = B[m];
++		C[m + NUM_ELEMS_PER_CHUNK] = C[m];
++	}
++
++	/*Reset the newly created empty chunk*/
++	m = (chunk_id - 1) * NUM_ELEMS_PER_CHUNK;
++	for (; m < chunk_id * NUM_ELEMS_PER_CHUNK; m++) {
++            reset_group(&B[m]);
++            reset_group(&C[m]);
++	}
++
++finish:
++	++(*cnk_count);
++	return 0;
 +}
 +
 +/* Insert a new chunk to a level at chunk_id-1. Note that Chunk ID
@@ -931,7 +979,7 @@ index 0000000..af0208f
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = chunk_insert(s->N32, s->P32, s->CK32, &s->cnk32_count, chunk_id, CNK_16);
++		err = cnk_insert(s->B32, s->C32, &s->cnk32_count, chunk_id);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 32");
 +			goto error;
