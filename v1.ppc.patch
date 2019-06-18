@@ -185,10 +185,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..73d6bb1
+index 0000000..7056851
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,1098 @@
+@@ -0,0 +1,1094 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -847,7 +847,6 @@ index 0000000..73d6bb1
 +	int i, j;
 +	u8 *n16, *p16, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
 +	u16 *c16;
-+	struct chunk16 *ck32;
 +        struct chunk *b32, *c32;
 +        struct chunk8 *ck40, *ck48;
 +	struct chunk16_last *ck64;
@@ -883,7 +882,6 @@ index 0000000..73d6bb1
 +                p32 = kcalloc(ARR_SIZE, sizeof(*p32), GFP_ATOMIC);
 +                b32 = kcalloc(BC_SIZE, sizeof(*b32), GFP_ATOMIC);
 +                c32 = kcalloc(BC_SIZE, sizeof(*c32), GFP_ATOMIC);
-+                ck32 = kcalloc(NUM_CHUNKS, sizeof(*ck32), GFP_ATOMIC);
 +
 +                n40 = kcalloc(ARR_SIZE_SM, sizeof(*n40), GFP_ATOMIC);
 +                p40 = kcalloc(ARR_SIZE_SM, sizeof(*p40), GFP_ATOMIC);
@@ -897,7 +895,7 @@ index 0000000..73d6bb1
 +                p64 = kcalloc(ARR_SIZE, sizeof(*p64), GFP_ATOMIC);
 +                ck64 = kcalloc(NUM_CHUNKS_LAST, sizeof(*ck64), GFP_ATOMIC);
 +                
-+		if (!n16 || !c16 || !p16 || !n32 || !p32 || !ck32 || !b32 || !c32
++		if (!n16 || !c16 || !p16 || !n32 || !p32 || !b32 || !c32
 +                        || !n40 || !p40 || !ck40 || 
 +                        !n48 || !p48 || !ck48 || !n64 || !p64 || !ck64) {
 +			kfree(n16);
@@ -907,7 +905,6 @@ index 0000000..73d6bb1
 +                        kfree(b32);
 +                        kfree(c32);
 +                        kfree(p32);
-+                        kfree(ck32);
 +                        kfree(n40);
 +                        kfree(p40);
 +                        kfree(ck40);
@@ -929,7 +926,6 @@ index 0000000..73d6bb1
 +                RCU_INIT_POINTER(s->P32, p32);
 +                RCU_INIT_POINTER(s->B32, b32);
 +                RCU_INIT_POINTER(s->C32, c32);
-+                RCU_INIT_POINTER(s->CK32, ck32);
 +                s->n32_cnt = 0;
 +
 +                RCU_INIT_POINTER(s->N40, n40);
@@ -1047,8 +1043,9 @@ index 0000000..73d6bb1
 +                if (err)
 +                        goto error;
 +        }
++
++        ck_idx = calc_idx(&(s->C32[idx]), off);
 +        /////// start from here
-+        ck_idx = calc_ck_idx(&(s->CK32[idx]), off);
 +        ck_off = (key >> 24) & 0XFF;
 +        /*Extract 16 more bits and calculate index to level 48, 64,..*/
 +        n_idx = ck_idx * CNK_8 + ck_off;
@@ -1176,13 +1173,17 @@ index 0000000..73d6bb1
 +{
 +	u8 *n16, *n;
 +	u16 *c16;
++        struct chunk *b, *c;
++        u32 off;
 +	struct chunk16 *ck;        
 +        struct chunk8 *ck_sm; /*Small chunk*/
 +	struct chunk16_last *ck_last;
 +	u8 netdev_index = s->def_nh;
 +	u16 n16_idx;/*Index to N16 and C16*/
-+	u32 n_idx;/*Index to N and C*/
++        u32 idx;/*Index to B/C*/
++	u32 n_idx;/*Index to N*/
 +	u32 ck_idx;/*Index to CK*/
++        u32 c_idx;/*Index to C*/
 +	u64 ck_off;/*Index to CK*/
 +	u32 part_idx, part_off;
 +
@@ -1202,9 +1203,8 @@ index 0000000..73d6bb1
 +	 */
 +	c16 = rcu_dereference(s->C16);
 +	if (likely(c16[n16_idx] != 0)) {
-+		ck_idx = c16[n16_idx] - 1;
-+		ck_off = (key >> 32) & 0XFFFF;
-+		n_idx = ck_idx * CNK_16 + ck_off;
++		idx = ((c16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF))/64;
++                off = idx % 64;
 +	} else {
 +		goto finish;
 +	}
@@ -1212,20 +1212,16 @@ index 0000000..73d6bb1
 +        /*Check if there is a longer prefix; if yes, extract more 16 bits
 +         * from MSB and calculate index to N48
 +         */
-+        ck = rcu_dereference(s->CK32);
-+        part_idx = ck_off / 64;
-+        part_off = ck_off % 64;
-+
++        c = rcu_dereference(s->C32);
 +        /*Find corresponding next-hop in level 32*/
-+        if (s->CK32[ck_idx].n_bitmap[part_idx] & (1ULL << part_off)) {
++        if (s->B32[idx].bitmap & (1ULL << off)) {
 +            n = rcu_dereference(s->N32);
-+            n_idx = calc_n_idx(&(s->CK32[ck_idx]), ck_off);
++            n_idx = calc_idx(&(s->B32[idx]), off);
 +            netdev_index = n[n_idx];      
 +        }
 +
-+        if (likely(ck[ck_idx].c_bitmap[part_idx] & (1ULL << part_off))) {
-+                ck_idx = ck[ck_idx].c_popcnt[part_idx] +
-+                        POPCNT_OFF(ck[ck_idx].c_bitmap[part_idx], part_off);
++        if (likely(c[idx].bitmap & (1ULL << off))) {
++                ck_idx = c[idx].popcnt + POPCNT_OFF(c[idx].bitmap, off);
 +                ck_off = (key >> 24) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
 +        } else {
