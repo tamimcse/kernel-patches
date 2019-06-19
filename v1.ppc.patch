@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..dc7dd6c
+index 0000000..f78a762
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,721 @@
@@ -195,20 +195,20 @@ index 0000000..dc7dd6c
 +}
 +
 +/*Converts a net_device to corresponding netdev_index*/
-+static u8 get_netdev_index(struct PPC *s, struct net_device *dev)
++static u8 get_netdev_index(struct PPC *p, struct net_device *dev)
 +{
 +	u8 i;
 +
 +	/*checks if the net_device is already seen; if yes then return the
 +	 *corresponding index
 +	 */
-+	for (i = 0; i < s->netdev_count; i++) {
-+		if (s->netdevs[i] == dev)
++	for (i = 0; i < p->netdev_count; i++) {
++		if (p->netdevs[i] == dev)
 +			return i;
 +	}
 +	/*If the net_device is not previously seen, then add it to the array*/
-+	s->netdevs[s->netdev_count++] = dev;
-+	return s->netdev_count - 1;
++	p->netdevs[p->netdev_count++] = dev;
++	return p->netdev_count - 1;
 +}
 +
 +static void reset_bitmap_pc (struct bitmap_pc *g)
