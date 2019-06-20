@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..f78a762
+index 0000000..7ab8caf
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,721 @@
@@ -585,7 +585,7 @@ index 0000000..f78a762
 +		num_leafs = 1U << (32 - prefix_len);
 +		for (i = 0, tmp = 1ULL << off; i < num_leafs; i++, tmp <<= 1) {
 +                    n_idx = calc_idx(&(p->B32[idx]), off + i);
-+                    if (p->B32[n_idx].bitmap & tmp) {                        
++                    if (p->B32[idx].bitmap & tmp) {                        
 +			/*Longer prefix exists*/
 +                        if (p->P32[n_idx] > prefix_len)
 +                                continue;
@@ -739,7 +739,7 @@ index 0000000..f78a762
 +		}
 +                
 +                for (i = idx + 1; i < BC_SIZE; i++)
-+                    p->B32[i].popcnt += new_prefixes;
++                    p->B64[i].popcnt += new_prefixes;
 +                
 +                bitmap = ((1ULL << num_leafs) - 1) << off;
 +                p->B64[idx].bitmap |= bitmap;
