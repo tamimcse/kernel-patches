@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..ada085a
+index 0000000..ed78c91
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,736 @@
@@ -151,7 +151,7 @@ index 0000000..ada085a
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Total number of chunks preallocated for level 24-64*/
++/*Total number of chunks preallocated for B32/C32*/
 +#define NUM_CHUNKS 64
 +
 +/*As we group each 64 elements, each chunk corresponds to 65536/64 elements*/
@@ -222,7 +222,7 @@ index 0000000..ada085a
 + * starts from 1, not 0. This function increments cnk_count of sail.
 + * This is why, it is passed by reference
 + */
-+static int bc_arr_insert(struct bitmap_pc *B, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id)
++static int bc_arr_insert(struct bitmap_pc *B, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id, u16 max_cnk_cnt)
 +{
 +	long long m;
 +        u16 b_popcnt = 0, c_popcnt = 0; 
@@ -232,7 +232,7 @@ index 0000000..ada085a
 +		return -EINVAL;
 +	}
 +
-+	if (*cnk_count >= NUM_CHUNKS) {
++	if (*cnk_count >= max_cnk_cnt) {
 +		pr_err("Cannot insert a new chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
@@ -575,7 +575,7 @@ index 0000000..ada085a
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id);
++		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id, NUM_CHUNKS);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 32");
 +			goto error;
@@ -709,7 +709,7 @@ index 0000000..ada085a
 +                chunk_id = calc_cid(p->C48, c_idx, off);
 +                if (!chunk_id)
 +                        goto error;
-+                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id);
++                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id, NUM_CHUNKS_LAST);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 64");
 +			goto error;
