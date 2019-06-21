@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..d249a66
+index 0000000..ada085a
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,734 @@
+@@ -0,0 +1,736 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -807,10 +807,11 @@ index 0000000..d249a66
 +         * from MSB and calculate index to N48
 +         */
 +        c = rcu_dereference(p->C32);
++        b = rcu_dereference(p->B32);
 +        /*Find corresponding next-hop in level 32*/
-+        if (p->B32[idx].bitmap & (1ULL << off)) {
++        if (b[idx].bitmap & (1ULL << off)) {
 +            n = rcu_dereference(p->N32);
-+            n_idx = calc_idx(&(p->B32[idx]), off);
++            n_idx = calc_idx(&(b[idx]), off);
 +            netdev_index = n[n_idx];      
 +        }
 +
@@ -859,10 +860,11 @@ index 0000000..d249a66
 +                goto finish;
 +        }
 +
++        b = rcu_dereference(p->B64);
 +        /*Find corresponding next-hop in level 32*/
-+        if (p->B64[idx].bitmap & (1ULL << off)) {
++        if (b[idx].bitmap & (1ULL << off)) {
 +            n = rcu_dereference(p->N64);
-+            n_idx = calc_idx(&(p->B64[idx]), off);
++            n_idx = calc_idx(&(b[idx]), off);
 +            netdev_index = n[n_idx];      
 +        }
 +
