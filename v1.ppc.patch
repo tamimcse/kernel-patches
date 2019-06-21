@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..7ab8caf
+index 0000000..229ad32
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,721 @@
+@@ -0,0 +1,733 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -178,7 +178,8 @@ index 0000000..7ab8caf
 +/*chunk size is 2^8*/
 +#define CNK_8 256
 +
-+/*memory preallocated for N and P array in level 24-64*/
++//FIXME: replace me with a smaller number
++/*memory preallocated for N and P array in level 24-64.*/
 +#define ARR_SIZE NUM_CHUNKS * CNK_16
 +
 +#define ARR_SIZE_SM SM_CHUNKS * CNK_8
@@ -224,6 +225,7 @@ index 0000000..7ab8caf
 +static int bc_arr_insert(struct bitmap_pc *B, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id)
 +{
 +	long long m;
++        u16 b_popcnt = 0, c_popcnt = 0; 
 +
 +	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id");
@@ -245,12 +247,21 @@ index 0000000..7ab8caf
 +                    C[m + NUM_ELEMS_PER_CHUNK] = C[m];
 +	}
 +
++        /*Find the popcnt of the last element to the left*/
++        if (chunk_id > 1) {
++            b_popcnt = B[(chunk_id - 1) * NUM_ELEMS_PER_CHUNK - 1].popcnt;
++            c_popcnt = C[(chunk_id - 1) * NUM_ELEMS_PER_CHUNK - 1].popcnt;
++        }
++            
 +	/*Reset the newly created empty chunk*/
 +	m = (chunk_id - 1) * NUM_ELEMS_PER_CHUNK;
 +	for (; m < chunk_id * NUM_ELEMS_PER_CHUNK; m++) {
-+            reset_bitmap_pc(&B[m]);
-+            if (C)
-+                reset_bitmap_pc(&C[m]);
++            B[m].bitmap = 0;
++            B[m].popcnt = b_popcnt;
++            if (C) {
++                C[m].bitmap = 0;
++                C[m].popcnt = c_popcnt;
++            }
 +	}
 +
 +	++(*cnk_count);
@@ -606,8 +617,9 @@ index 0000000..7ab8caf
 +                    }
 +		}
 +
-+                for (i = idx + 1; i < BC_SIZE; i++)
++                for (i = idx + 1; i < NUM_ELEMS_PER_CHUNK * p->cnk32_count; i++) {
 +                    p->B32[i].popcnt += new_prefixes;
++                }
 +
 +                bitmap = ((1ULL << num_leafs) - 1) << off;
 +                p->B32[idx].bitmap |= bitmap;
@@ -738,7 +750,7 @@ index 0000000..7ab8caf
 +                    }
 +		}
 +                
-+                for (i = idx + 1; i < BC_SIZE; i++)
++                for (i = idx + 1; i < NUM_ELEMS_PER_CHUNK * p->cnk64_count; i++)
 +                    p->B64[i].popcnt += new_prefixes;
 +                
 +                bitmap = ((1ULL << num_leafs) - 1) << off;
