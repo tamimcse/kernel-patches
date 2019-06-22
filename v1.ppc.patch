@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..e4e0002
+index 0000000..a941bba
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,745 @@
+@@ -0,0 +1,752 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -212,12 +212,6 @@ index 0000000..e4e0002
 +	return p->netdev_count - 1;
 +}
 +
-+static void reset_bitmap_pc (struct bitmap_pc *g)
-+{
-+    g->bitmap = 0;
-+    g->popcnt = 0;
-+}
-+
 +/* Insert a new chunk to a level at chunk_id-1. Note that Chunk ID
 + * starts from 1, not 0. This function increments cnk_count of sail.
 + * This is why, it is passed by reference
@@ -278,10 +272,11 @@ index 0000000..e4e0002
 +	return 0;
 +}
 +
-+static int chunk_insert(u8 *N, u8 *P, struct bitmap_pc *c, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
++static int chunk_insert(u8 *N, u8 *P, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
 +{
 +	long long m;
-+        int num_elems_per_chunk = cnk_size / 64;
++        u16 c_popcnt = 0; 
++        int elems_per_chunk_c_arr = cnk_size / 64;
 +
 +	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id");
@@ -296,11 +291,15 @@ index 0000000..e4e0002
 +	/*shift each element one step right to make
 +	 *space for the new one
 +	 */
-+	m = (long long)(*cnk_count) * cnk_size - 1;
-+	for (; m >= (chunk_id - 1) * cnk_size; m--) {
-+		N[m + cnk_size] = N[m];
-+		P[m + cnk_size] = P[m];
-+	}
++//	m = (long long)(*cnk_count) * cnk_size - 1;
++//	for (; m >= (chunk_id - 1) * cnk_size; m--) {
++//		N[m + cnk_size] = N[m];
++//		P[m + cnk_size] = P[m];
++//	}        
++        memmove(&N[chunk_id * cnk_size], &N[(chunk_id - 1) * cnk_size], 
++                (*cnk_count - chunk_id + 1) * cnk_size);
++        memmove(&P[chunk_id * cnk_size], &P[(chunk_id - 1) * cnk_size], 
++                (*cnk_count - chunk_id + 1) * cnk_size);
 +
 +	/*Reset the newly created empty chunk*/
 +	m = (chunk_id - 1) * cnk_size;
@@ -309,21 +308,29 @@ index 0000000..e4e0002
 +		P[m] = 0;
 +	}
 +        
-+        if (!c)
++        if (!C)
 +            goto finish;
 +        
 +	/*shift each element one step right to make
 +	 *space for the new one
 +	 */
-+	m = (long long)(*cnk_count) * num_elems_per_chunk - 1;
-+	for (; m >= (chunk_id - 1) * num_elems_per_chunk; m--) {
-+		c[m + num_elems_per_chunk] = c[m];
-+	}
++//	m = (long long)(*cnk_count) * num_elems_per_chunk - 1;
++//	for (; m >= (chunk_id - 1) * num_elems_per_chunk; m--) {
++//		c[m + num_elems_per_chunk] = c[m];
++//	}
++        memmove(&C[chunk_id * elems_per_chunk_c_arr], 
++                &C[(chunk_id - 1) * elems_per_chunk_c_arr], 
++                (*cnk_count - chunk_id + 1) * elems_per_chunk_c_arr);
 +
++        /*Find the popcnt of the last element to the left*/
++        if (chunk_id > 1)
++            c_popcnt = C[(chunk_id - 1) * elems_per_chunk_c_arr - 1].popcnt;
++        
 +	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * num_elems_per_chunk;
-+	for (; m < chunk_id * num_elems_per_chunk; m++) {
-+            reset_bitmap_pc(&c[m]);
++	m = (chunk_id - 1) * elems_per_chunk_c_arr;
++	for (; m < chunk_id * elems_per_chunk_c_arr; m++) {
++            C[m].bitmap = 0;
++            C[m].popcnt = c_popcnt;
 +	}
 +
 +finish:
