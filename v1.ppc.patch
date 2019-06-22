@@ -890,7 +890,7 @@ index 0000000..a941bba
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..b3c21e3 100644
+index 826b14d..c682721 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -957,7 +957,7 @@ index 826b14d..b3c21e3 100644
 +#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
  
 +        if (rt->fib6_dst.plen <= 64) {
-+            pr_err("Inserting %pI6c %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
++//            pr_err("Inserting %pI6c %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
 +            ppc_insert(&rt->fib6_table->ppc, get_key(rt->fib6_dst.addr), rt->fib6_dst.plen, rt->fib6_nh.nh_dev);            
 +        }
 +#endif
