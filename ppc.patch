@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..51030e6
+index 0000000..12c6587
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,747 @@
+@@ -0,0 +1,737 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -606,11 +606,6 @@ index 0000000..51030e6
 +                    } else {
 +                        if (n_idx >= ARR_SIZE)
 +                            goto error;
-+//                        /*FIXME: If this loop goes for long, that breaks the kerenel*/
-+//                        for (j = (int)p->n32_cnt - 1; j >= (int)n_idx; j--) {
-+//                                p->N32[j + 1] = p->N32[j];
-+//                                p->P32[j + 1] = p->P32[j];
-+//                        }
 +                        /*Shift each element one step right to make room
 +                         for the new element*/
 +                        memmove(&p->N32[n_idx + 1], &p->N32[n_idx], (p->n32_cnt - n_idx) * sizeof (p->N32[0]));
@@ -743,11 +738,6 @@ index 0000000..51030e6
 +                    } else {
 +                        if (n_idx >= ARR_SIZE)
 +                            goto error;
-+                        /*FIXME: If this loop goes for long, that breaks the kerenel*/
-+//                        for (j = (int)p->n64_cnt - 1; j >= (int)n_idx; j--) {
-+//                                p->N64[j + 1] = p->N64[j];
-+//                                p->P64[j + 1] = p->P64[j];
-+//                        }
 +                        /*Shift each element one step right to make room
 +                         for the new element*/
 +                        memmove(&p->N64[n_idx + 1], &p->N64[n_idx], (p->n64_cnt - n_idx) * sizeof (p->N64[0]));
