@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..12c6587
+index 0000000..3f5c949
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,737 @@
+@@ -0,0 +1,738 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -152,25 +152,28 @@ index 0000000..12c6587
 +#define LEVEL16_SIZE 65536
 +
 +/*Total number of chunks preallocated for B32/C32*/
-+#define NUM_CHUNKS 64
++#define B32_NUM_CHUNKS 64
 +
-+/*As we group each 64 elements, each chunk corresponds to 65536/64 elements*/
-+#define NUM_ELEMS_PER_CHUNK 1024
++/*The size of B32 and C32. Here each chunk consists of 64 groups*/
++#define B32_SIZE B32_NUM_CHUNKS * 64
 +
-+/*The size of B and C array. . Here each chunk consists of 64 groups*/
-+#define BC_SIZE NUM_CHUNKS * 64
++//FIXME: replace me with a smaller number
++/*The size of N32/P32/N64/P64*/
++#define N32_N64_SIZE B32_NUM_CHUNKS * CNK_16
 +
-+/*Number of chunks in the last level (level 64)*/
-+#define NUM_CHUNKS_LAST 400
-+
-+#define B64_SIZE NUM_CHUNKS_LAST * 64
-+
-+/*Number of small chunks*/
-+#define SM_CHUNKS 16384
++/*Number of chunks in C40/C48*/
++#define C40_C48_NUM_CHUNKS 16384
 +
 +/*The size of C40 and C48. Here each chunk consists of 4 groups*/
-+#define BC_SIZE_SM SM_CHUNKS * 4
++#define C40_C48_SIZE C40_C48_NUM_CHUNKS * 4
 +
++/*The size of N40/P40/N48/P48*/
++#define N40_N48_SIZE C40_C48_NUM_CHUNKS * CNK_8
++
++/*Number of chunks in B64*/
++#define B64_NUM_CHUNKS 400
++
++#define B64_SIZE B64_NUM_CHUNKS * 64
 +
 +/*chunk size is 2^16*/
 +#define CNK_16 65536
@@ -178,11 +181,9 @@ index 0000000..12c6587
 +/*chunk size is 2^8*/
 +#define CNK_8 256
 +
-+//FIXME: replace me with a smaller number
-+/*memory preallocated for N and P array in level 24-64.*/
-+#define ARR_SIZE NUM_CHUNKS * CNK_16
-+
-+#define ARR_SIZE_SM SM_CHUNKS * CNK_8
++/*As we group each 64 elements, each chunk in level 32 and level 64 
++ * contains 65536/64 elements*/
++#define NUM_ELEMS_PER_CHUNK 1024
 +
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
@@ -276,7 +277,7 @@ index 0000000..12c6587
 +		return -EINVAL;
 +	}
 +
-+	if (*cnk_count >= SM_CHUNKS) {
++	if (*cnk_count >= C40_C48_NUM_CHUNKS) {
 +		pr_err("Cannot insert a new chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
@@ -446,7 +447,7 @@ index 0000000..12c6587
 +
 +int ppc_insert(struct PPC *p, u64 key, u8 prefix_len, struct net_device *dev)
 +{
-+	int i, j;
++	int i;
 +	u8 *n16, *p16, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
 +	u16 *c16;
 +        struct bitmap_pc *b32, *c32, *c40, *c48, *b64;
@@ -478,21 +479,21 @@ index 0000000..12c6587
 +		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
 +		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
 +                
-+                n32 = kcalloc(ARR_SIZE, sizeof(*n32), GFP_ATOMIC);
-+                p32 = kcalloc(ARR_SIZE, sizeof(*p32), GFP_ATOMIC);
-+                b32 = kcalloc(BC_SIZE, sizeof(*b32), GFP_ATOMIC);
-+                c32 = kcalloc(BC_SIZE, sizeof(*c32), GFP_ATOMIC);
++                n32 = kcalloc(N32_N64_SIZE, sizeof(*n32), GFP_ATOMIC);
++                p32 = kcalloc(N32_N64_SIZE, sizeof(*p32), GFP_ATOMIC);
++                b32 = kcalloc(B32_SIZE, sizeof(*b32), GFP_ATOMIC);
++                c32 = kcalloc(B32_SIZE, sizeof(*c32), GFP_ATOMIC);
 +
-+                n40 = kcalloc(ARR_SIZE_SM, sizeof(*n40), GFP_ATOMIC);
-+                p40 = kcalloc(ARR_SIZE_SM, sizeof(*p40), GFP_ATOMIC);
-+                c40 = kcalloc(BC_SIZE_SM, sizeof(*c40), GFP_ATOMIC);
++                n40 = kcalloc(N40_N48_SIZE, sizeof(*n40), GFP_ATOMIC);
++                p40 = kcalloc(N40_N48_SIZE, sizeof(*p40), GFP_ATOMIC);
++                c40 = kcalloc(C40_C48_SIZE, sizeof(*c40), GFP_ATOMIC);
 +                
-+                n48 = kcalloc(ARR_SIZE_SM, sizeof(*n48), GFP_ATOMIC);
-+                p48 = kcalloc(ARR_SIZE_SM, sizeof(*p48), GFP_ATOMIC);
-+                c48 = kcalloc(BC_SIZE_SM, sizeof(*c48), GFP_ATOMIC);
++                n48 = kcalloc(N40_N48_SIZE, sizeof(*n48), GFP_ATOMIC);
++                p48 = kcalloc(N40_N48_SIZE, sizeof(*p48), GFP_ATOMIC);
++                c48 = kcalloc(C40_C48_SIZE, sizeof(*c48), GFP_ATOMIC);
 +
-+                n64 = kcalloc(ARR_SIZE, sizeof(*n64), GFP_ATOMIC);
-+                p64 = kcalloc(ARR_SIZE, sizeof(*p64), GFP_ATOMIC);
++                n64 = kcalloc(N32_N64_SIZE, sizeof(*n64), GFP_ATOMIC);
++                p64 = kcalloc(N32_N64_SIZE, sizeof(*p64), GFP_ATOMIC);
 +                b64 = kcalloc(B64_SIZE, sizeof(*b64), GFP_ATOMIC);
 +                
 +		if (!n16 || !c16 || !p16 || !n32 || !p32 || !b32 || !c32
@@ -575,7 +576,7 @@ index 0000000..12c6587
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id, NUM_CHUNKS);
++		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id, B32_NUM_CHUNKS);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 32");
 +			goto error;
@@ -604,7 +605,7 @@ index 0000000..12c6587
 +                        p->N32[n_idx] = netdev_index;
 +                        p->P32[n_idx] = prefix_len;
 +                    } else {
-+                        if (n_idx >= ARR_SIZE)
++                        if (n_idx >= N32_N64_SIZE)
 +                            goto error;
 +                        /*Shift each element one step right to make room
 +                         for the new element*/
@@ -708,7 +709,7 @@ index 0000000..12c6587
 +                chunk_id = calc_cid(p->C48, c_idx, off);
 +                if (!chunk_id)
 +                        goto error;
-+                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id, NUM_CHUNKS_LAST);
++                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id, B64_NUM_CHUNKS);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 64");
 +			goto error;
@@ -736,7 +737,7 @@ index 0000000..12c6587
 +                        p->N64[n_idx] = netdev_index;
 +                        p->P64[n_idx] = prefix_len;
 +                    } else {
-+                        if (n_idx >= ARR_SIZE)
++                        if (n_idx >= N32_N64_SIZE)
 +                            goto error;
 +                        /*Shift each element one step right to make room
 +                         for the new element*/
