@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..3f5c949
+index 0000000..8da8052
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,738 @@
+@@ -0,0 +1,742 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -151,29 +151,33 @@ index 0000000..3f5c949
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Total number of chunks preallocated for B32/C32*/
-+#define B32_NUM_CHUNKS 64
++/*Number of chunks in level 32*/
++#define NUM32 64
++
++/*Number of chunks in level 40 and 48*/
++#define NUM40 16384
++
++/*Number of chunks in level 64*/
++#define NUM64 400
 +
 +/*The size of B32 and C32. Here each chunk consists of 64 groups*/
-+#define B32_SIZE B32_NUM_CHUNKS * 64
++#define B32_SIZE NUM32 * 64
 +
-+//FIXME: replace me with a smaller number
 +/*The size of N32/P32/N64/P64*/
-+#define N32_N64_SIZE B32_NUM_CHUNKS * CNK_16
++#define N32_SIZE 65536
 +
-+/*Number of chunks in C40/C48*/
-+#define C40_C48_NUM_CHUNKS 16384
++/*The size of N64/P64*/
++#define N64_SIZE 65536
 +
 +/*The size of C40 and C48. Here each chunk consists of 4 groups*/
-+#define C40_C48_SIZE C40_C48_NUM_CHUNKS * 4
++#define C40_C48_SIZE NUM40 * 4
 +
 +/*The size of N40/P40/N48/P48*/
-+#define N40_N48_SIZE C40_C48_NUM_CHUNKS * CNK_8
++#define N40_N48_SIZE NUM40 * CNK_8
 +
-+/*Number of chunks in B64*/
-+#define B64_NUM_CHUNKS 400
 +
-+#define B64_SIZE B64_NUM_CHUNKS * 64
++
++#define B64_SIZE NUM64 * 64
 +
 +/*chunk size is 2^16*/
 +#define CNK_16 65536
@@ -277,7 +281,7 @@ index 0000000..3f5c949
 +		return -EINVAL;
 +	}
 +
-+	if (*cnk_count >= C40_C48_NUM_CHUNKS) {
++	if (*cnk_count >= NUM40) {
 +		pr_err("Cannot insert a new chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
@@ -479,8 +483,8 @@ index 0000000..3f5c949
 +		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
 +		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
 +                
-+                n32 = kcalloc(N32_N64_SIZE, sizeof(*n32), GFP_ATOMIC);
-+                p32 = kcalloc(N32_N64_SIZE, sizeof(*p32), GFP_ATOMIC);
++                n32 = kcalloc(N32_SIZE, sizeof(*n32), GFP_ATOMIC);
++                p32 = kcalloc(N32_SIZE, sizeof(*p32), GFP_ATOMIC);
 +                b32 = kcalloc(B32_SIZE, sizeof(*b32), GFP_ATOMIC);
 +                c32 = kcalloc(B32_SIZE, sizeof(*c32), GFP_ATOMIC);
 +
@@ -492,8 +496,8 @@ index 0000000..3f5c949
 +                p48 = kcalloc(N40_N48_SIZE, sizeof(*p48), GFP_ATOMIC);
 +                c48 = kcalloc(C40_C48_SIZE, sizeof(*c48), GFP_ATOMIC);
 +
-+                n64 = kcalloc(N32_N64_SIZE, sizeof(*n64), GFP_ATOMIC);
-+                p64 = kcalloc(N32_N64_SIZE, sizeof(*p64), GFP_ATOMIC);
++                n64 = kcalloc(N64_SIZE, sizeof(*n64), GFP_ATOMIC);
++                p64 = kcalloc(N64_SIZE, sizeof(*p64), GFP_ATOMIC);
 +                b64 = kcalloc(B64_SIZE, sizeof(*b64), GFP_ATOMIC);
 +                
 +		if (!n16 || !c16 || !p16 || !n32 || !p32 || !b32 || !c32
@@ -576,7 +580,7 @@ index 0000000..3f5c949
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
-+		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id, B32_NUM_CHUNKS);
++		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id, NUM32);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 32");
 +			goto error;
@@ -605,7 +609,7 @@ index 0000000..3f5c949
 +                        p->N32[n_idx] = netdev_index;
 +                        p->P32[n_idx] = prefix_len;
 +                    } else {
-+                        if (n_idx >= N32_N64_SIZE)
++                        if (n_idx >= N32_SIZE)
 +                            goto error;
 +                        /*Shift each element one step right to make room
 +                         for the new element*/
@@ -709,7 +713,7 @@ index 0000000..3f5c949
 +                chunk_id = calc_cid(p->C48, c_idx, off);
 +                if (!chunk_id)
 +                        goto error;
-+                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id, B64_NUM_CHUNKS);
++                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id, NUM64);
 +		if (err) {
 +                        pr_err("Could not insert chunk to level 64");
 +			goto error;
@@ -737,7 +741,7 @@ index 0000000..3f5c949
 +                        p->N64[n_idx] = netdev_index;
 +                        p->P64[n_idx] = prefix_len;
 +                    } else {
-+                        if (n_idx >= N32_N64_SIZE)
++                        if (n_idx >= N64_SIZE)
 +                            goto error;
 +                        /*Shift each element one step right to make room
 +                         for the new element*/
