@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..50bdb03
+index 0000000..553309f
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,741 @@
@@ -173,7 +173,7 @@ index 0000000..50bdb03
 +#define N32_SIZE 65536
 +
 +/*The size of N64/P64*/
-+#define N64_SIZE 65536
++#define N64_SIZE 655360
 +
 +/*The size of C40 and C48. Here each chunk consists of 4 groups*/
 +#define C40_C48_SIZE NUM40 * ELEMS_PER_CHUNK_40
