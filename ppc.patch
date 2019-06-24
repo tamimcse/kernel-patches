@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..fdd41f6
+index 0000000..50bdb03
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,741 @@
@@ -160,8 +160,14 @@ index 0000000..fdd41f6
 +/*Number of chunks in level 64*/
 +#define NUM64 400
 +
++/*As we group each 64 elements, each chunk in level 32 and level 64 
++ * contains 1024 (65536/64) elements. On the other hand, chunks in level 40 and 
++ * level 48 contain 4 (256/64) chunks */
++#define ELEMS_PER_CHUNK 1024
++#define ELEMS_PER_CHUNK_40 4
++
 +/*The size of B32 and C32. Here each chunk consists of 64 groups*/
-+#define B32_SIZE NUM32 * 64
++#define B32_SIZE NUM32 * ELEMS_PER_CHUNK
 +
 +/*The size of N32/P32/N64/P64*/
 +#define N32_SIZE 65536
@@ -170,7 +176,7 @@ index 0000000..fdd41f6
 +#define N64_SIZE 65536
 +
 +/*The size of C40 and C48. Here each chunk consists of 4 groups*/
-+#define C40_C48_SIZE NUM40 * 4
++#define C40_C48_SIZE NUM40 * ELEMS_PER_CHUNK_40
 +
 +/*The size of N40/P40/N48/P48*/
 +#define N40_N48_SIZE NUM40 * CNK_8
@@ -182,12 +188,6 @@ index 0000000..fdd41f6
 +
 +/*chunk size is 2^8*/
 +#define CNK_8 256
-+
-+/*As we group each 64 elements, each chunk in level 32 and level 64 
-+ * contains 1024 (65536/64) elements. On the other hand, chunks in level 40 and 
-+ * level 48 contain 4 (256/64) chunks */
-+#define ELEMS_PER_CHUNK 1024
-+#define ELEMS_PER_CHUNK_40 4
 +
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
@@ -546,7 +546,7 @@ index 0000000..fdd41f6
 +                RCU_INIT_POINTER(p->B64, b64);
 +                p->n64_cnt = 0;
 +                
-+//		synchronize_rcu();
++		synchronize_rcu();
 +	}
 +
 +	/*Eextract 16 bits from MSB.*/
