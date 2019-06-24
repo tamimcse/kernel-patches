@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..bb07da9
+index 0000000..fdd41f6
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,742 @@
+@@ -0,0 +1,741 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -565,14 +565,14 @@ index 0000000..bb07da9
 +		goto finish;
 +	}
 +
-+	/* The length of the prefix is 21~64. So need to check if there is a
-+	 * chunk for this prefix in level 24. C16[..] = 0 indicates that there
++	/* The length of the prefix is 17-64. So need to check if there is a
++	 * chunk for this prefix in level 32. C16[n16_idx] = 0 indicates that there
 +	 * is no chunk, so need to insert one. The insertion works as
 +	 * following:
-+	 * 1. Calculate the chunk ID to level 24 from C16. The Chunk ID
++	 * 1. Calculate the chunk ID to level 32 from C16. The Chunk ID
 +	 * indicates where the new chunk should be inserted.
-+	 * 2. Insert a new chunk in level 24
-+	 * 3. Update the C16[] based on the newly inserted chunk
++	 * 2. Insert a new chunk in level 32
++	 * 3. Update the C16 based on the newly inserted chunk
 +	 */
 +	if (p->C16[n16_idx] == 0) {
 +		/*Step 1*/
@@ -591,14 +591,14 @@ index 0000000..bb07da9
 +			goto error;
 +	}
 +
-+	/*Extract bit 17~32 from MSB and calculate index to B32/C32*/
++	/*Extract bit 17-32 and calculate index to B32/C32*/
 +        idx_sail = (p->C16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF);
 +        idx = idx_sail / 64;
 +        /*bit offset in a 64-bit bitmap*/
 +        off = idx_sail % 64;
 +        
 +	if (prefix_len <= 32) {
-+		/*All the leafs in level 17~32 will be stored in level 32.*/
++		/*All the leafs in level 17-32 will be stored in level 32.*/
 +		num_leafs = 1U << (32 - prefix_len);
 +		for (i = 0, tmp = 1ULL << off; i < num_leafs; i++, tmp <<= 1) {
 +                    n_idx = calc_idx(&(p->B32[idx]), off + i);
@@ -651,14 +651,13 @@ index 0000000..bb07da9
 +        }
 +
 +        ck_idx = calc_idx(&(p->C32[idx]), off);
-+        /////// start from here
-+        /*Extract 16 more bits and calculate index to level 48, 64,..*/
++        /*Extract 33-40 bit and calculate index to level 40*/
 +        n_idx = (ck_idx * CNK_8) + ((key >> 24) & 0XFF);
 +        c_idx = n_idx / 64; 
 +        off = n_idx % 64;
 +
 +        if (prefix_len <= 40) {
-+                /*All the leafs in level 33~48 will be stored in level 48.*/
++                /*All the leafs in level 33~40 will be stored in level 40.*/
 +                num_leafs = 1U << (40 - prefix_len);
 +                for (i = 0; i < num_leafs; i++) {
 +                        /*Longer prefix exists*/
@@ -670,7 +669,7 @@ index 0000000..bb07da9
 +                goto finish;
 +        }
 +        
-+        /* The length of the prefix is 33-64, but there is no chunk for
++        /* The length of the prefix is 41-64, but there is no chunk for
 +         * this prefix in the next level. So do the same as before
 +         */
 +        if (!(p->C40[c_idx].bitmap & (1ULL << off))) {
@@ -688,13 +687,13 @@ index 0000000..bb07da9
 +        }
 +        
 +        ck_idx = calc_idx(&(p->C40[c_idx]), off);
-+        /*Extract 16 more bits and calculate index to level 48, 64,..*/
++        /*Extract 41-48 bit and calculate index to level 48*/
 +        n_idx = (ck_idx * CNK_8) + ((key >> 16) & 0XFF);
 +        c_idx = n_idx / 64; 
 +        off = n_idx % 64;
 +
 +        if (prefix_len <= 48) {
-+                /*All the leafs in level 33~48 will be stored in level 48.*/
++                /*All the leafs in level 41~48 will be stored in level 48.*/
 +                num_leafs = 1U << (48 - prefix_len);
 +                for (i = 0; i < num_leafs; i++) {
 +                        /*Longer prefix exists*/
@@ -723,14 +722,14 @@ index 0000000..bb07da9
 +                        goto error;
 +        }
 +
-+        /*Extract 16 more bits and calculate index to level 48, 64,..*/
++        /*Extract 49-64 bit and calculate index to level 64*/
 +        ck_idx = calc_idx(&(p->C48[c_idx]), off);
 +        idx_sail = (ck_idx * CNK_16) + (key & 0XFFFF);        
 +        idx = idx_sail / 64;
 +        off = idx_sail % 64;
 +
 +        if (prefix_len <= 64) {
-+		/*All the leafs in level 17~32 will be stored in level 32.*/
++		/*All the leafs in level 49-64 will be stored in level 64.*/
 +		num_leafs = 1U << (64 - prefix_len);
 +		for (i = 0, tmp = 1ULL << off; i < num_leafs; i++, tmp <<= 1) {
 +                    n_idx = calc_idx(&(p->B64[idx]), off + i);
