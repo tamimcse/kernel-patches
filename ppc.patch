@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..8da8052
+index 0000000..bb07da9
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,742 @@
@@ -175,8 +175,6 @@ index 0000000..8da8052
 +/*The size of N40/P40/N48/P48*/
 +#define N40_N48_SIZE NUM40 * CNK_8
 +
-+
-+
 +#define B64_SIZE NUM64 * 64
 +
 +/*chunk size is 2^16*/
@@ -186,8 +184,10 @@ index 0000000..8da8052
 +#define CNK_8 256
 +
 +/*As we group each 64 elements, each chunk in level 32 and level 64 
-+ * contains 65536/64 elements*/
-+#define NUM_ELEMS_PER_CHUNK 1024
++ * contains 1024 (65536/64) elements. On the other hand, chunks in level 40 and 
++ * level 48 contain 4 (256/64) chunks */
++#define ELEMS_PER_CHUNK 1024
++#define ELEMS_PER_CHUNK_40 4
 +
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
@@ -239,25 +239,25 @@ index 0000000..8da8052
 +	/*shift each element one step right to make
 +	 *space for the new one
 +	 */
-+        memmove(&B[chunk_id * NUM_ELEMS_PER_CHUNK], 
-+                &B[(chunk_id - 1) * NUM_ELEMS_PER_CHUNK], 
-+                (*cnk_count - chunk_id + 1) * NUM_ELEMS_PER_CHUNK);
++        memmove(&B[chunk_id * ELEMS_PER_CHUNK], 
++                &B[(chunk_id - 1) * ELEMS_PER_CHUNK], 
++                (*cnk_count - chunk_id + 1) * ELEMS_PER_CHUNK);
 +        if (C) {
-+            memmove(&C[chunk_id * NUM_ELEMS_PER_CHUNK], 
-+                    &C[(chunk_id - 1) * NUM_ELEMS_PER_CHUNK], 
-+                    (*cnk_count - chunk_id + 1) * NUM_ELEMS_PER_CHUNK);
++            memmove(&C[chunk_id * ELEMS_PER_CHUNK], 
++                    &C[(chunk_id - 1) * ELEMS_PER_CHUNK], 
++                    (*cnk_count - chunk_id + 1) * ELEMS_PER_CHUNK);
 +        }
 +
 +        /*Find the popcnt of the last element to the left*/
 +        if (chunk_id > 1) {
-+            b_popcnt = B[(chunk_id - 1) * NUM_ELEMS_PER_CHUNK - 1].popcnt;
++            b_popcnt = B[(chunk_id - 1) * ELEMS_PER_CHUNK - 1].popcnt;
 +            if (C)
-+                c_popcnt = C[(chunk_id - 1) * NUM_ELEMS_PER_CHUNK - 1].popcnt;
++                c_popcnt = C[(chunk_id - 1) * ELEMS_PER_CHUNK - 1].popcnt;
 +        }
 +            
 +	/*Reset the newly created empty chunk*/
-+	m = (chunk_id - 1) * NUM_ELEMS_PER_CHUNK;
-+	for (; m < chunk_id * NUM_ELEMS_PER_CHUNK; m++) {
++	m = (chunk_id - 1) * ELEMS_PER_CHUNK;
++	for (; m < chunk_id * ELEMS_PER_CHUNK; m++) {
 +            B[m].bitmap = 0;
 +            B[m].popcnt = b_popcnt;
 +            if (C) {
@@ -622,7 +622,7 @@ index 0000000..8da8052
 +                    }
 +		}
 +
-+                for (i = idx + 1; i < NUM_ELEMS_PER_CHUNK * p->cnk32_count; i++) {
++                for (i = idx + 1; i < ELEMS_PER_CHUNK * p->cnk32_count; i++) {
 +                    p->B32[i].popcnt += new_prefixes;
 +                }
 +
@@ -754,7 +754,7 @@ index 0000000..8da8052
 +                    }
 +		}
 +                
-+                for (i = idx + 1; i < NUM_ELEMS_PER_CHUNK * p->cnk64_count; i++)
++                for (i = idx + 1; i < ELEMS_PER_CHUNK * p->cnk64_count; i++)
 +                    p->B64[i].popcnt += new_prefixes;
 +                
 +                bitmap = ((1ULL << num_leafs) - 1) << off;
