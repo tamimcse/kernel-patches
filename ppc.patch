@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..553309f
+index 0000000..a85ecea
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,741 @@
+@@ -0,0 +1,744 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -192,12 +192,15 @@ index 0000000..553309f
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
 +
++/*POPCNT of right-most N bits of X*/
++#define POPCNT_RGT(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
++
 +/*POPCNT of left-most N bits of X*/
-+#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
++#define POPCNT_LFT(X, N) (hweight64((0XFFFFFFFFFFFFFFFFULL << (64 - N)) & (X)))
 +
 +static u16 calc_idx(struct bitmap_pc *c, u32 off)
 +{
-+	return c->popcnt + POPCNT_OFF(c->bitmap, off);
++	return c->popcnt + POPCNT_RGT(c->bitmap, off);
 +}
 +
 +/*Converts a net_device to corresponding netdev_index*/
@@ -378,7 +381,7 @@ index 0000000..553309f
 +	/*find the index to C24 where previous chunk ID would be found*/
 +	if (c[idx].bitmap) {
 +		index = c[idx].popcnt +
-+		    POPCNT_OFF(c[idx].bitmap, idx_off) - 1;
++		    POPCNT_RGT(c[idx].bitmap, idx_off) - 1;
 +                if (index >= CNK_16 - 2)
 +                    goto err;
 +		if (index >= 0)
@@ -414,7 +417,7 @@ index 0000000..553309f
 +
 +	/*find the index where Chunk ID should be copied to*/
 +	if (c[idx].bitmap) {
-+		index = c[idx].popcnt + POPCNT_OFF(c[idx].bitmap, idx_off);
++		index = c[idx].popcnt + POPCNT_RGT(c[idx].bitmap, idx_off);
 +                if (index >= CNK_16)
 +                    goto err;
 +		goto index_found;
@@ -819,7 +822,7 @@ index 0000000..553309f
 +         * and calculate index to N40
 +         */
 +        if (likely(c[idx].bitmap & (1ULL << off))) {
-+                ck_idx = c[idx].popcnt + POPCNT_OFF(c[idx].bitmap, off);
++                ck_idx = c[idx].popcnt + POPCNT_RGT(c[idx].bitmap, off);
 +                ck_off = (key >> 24) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
 +                c_idx = n_idx / 64;
@@ -838,7 +841,7 @@ index 0000000..553309f
 +         */
 +        c = rcu_dereference(p->C40);
 +        if (likely(c[c_idx].bitmap & (1ULL << off))) {
-+                ck_idx = c[c_idx].popcnt + POPCNT_OFF(c[c_idx].bitmap, off);
++                ck_idx = c[c_idx].popcnt + POPCNT_RGT(c[c_idx].bitmap, off);
 +                ck_off = (key >> 16) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
 +                c_idx = n_idx / 64;
@@ -857,7 +860,7 @@ index 0000000..553309f
 +         */
 +        c = rcu_dereference(p->C48);
 +        if (likely(c[c_idx].bitmap & (1ULL << off))) {
-+                ck_idx = c[c_idx].popcnt + POPCNT_OFF(c[c_idx].bitmap, off);
++                ck_idx = c[c_idx].popcnt + POPCNT_RGT(c[c_idx].bitmap, off);
 +                idx_sail = ck_idx * CNK_16 + (key & 0XFFFF);
 +                idx = idx_sail / 64;
 +                off = idx_sail % 64;
