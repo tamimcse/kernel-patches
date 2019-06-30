@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..a85ecea
+index 0000000..729ce14
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,744 @@
+@@ -0,0 +1,745 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -189,6 +189,8 @@ index 0000000..a85ecea
 +/*chunk size is 2^8*/
 +#define CNK_8 256
 +
++#define MSK 0X8000000000000000ULL
++
 +/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
 +
@@ -196,11 +198,11 @@ index 0000000..a85ecea
 +#define POPCNT_RGT(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*POPCNT of left-most N bits of X*/
-+#define POPCNT_LFT(X, N) (hweight64((0XFFFFFFFFFFFFFFFFULL << (64 - N)) & (X)))
++#define POPCNT_LFT(X, N) (hweight64(((0XFFFFFFFFFFFFFFFFULL << (63 - (N))) << 1) & (X)))
 +
 +static u16 calc_idx(struct bitmap_pc *c, u32 off)
 +{
-+	return c->popcnt + POPCNT_RGT(c->bitmap, off);
++	return c->popcnt + POPCNT_LFT(c->bitmap, off);
 +}
 +
 +/*Converts a net_device to corresponding netdev_index*/
@@ -380,8 +382,7 @@ index 0000000..a85ecea
 +        
 +	/*find the index to C24 where previous chunk ID would be found*/
 +	if (c[idx].bitmap) {
-+		index = c[idx].popcnt +
-+		    POPCNT_RGT(c[idx].bitmap, idx_off) - 1;
++		index = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, idx_off) - 1;
 +                if (index >= CNK_16 - 2)
 +                    goto err;
 +		if (index >= 0)
@@ -410,14 +411,14 @@ index 0000000..a85ecea
 +	long long i;
 +	u64 index = 0;
 +
-+	if (c[idx].bitmap & (1ULL << idx_off)) {
++	if (c[idx].bitmap & (MSK >> idx_off)) {
 +		pr_err("Error: bitmap is already set");
 +		return -EINVAL;
 +	}
 +
 +	/*find the index where Chunk ID should be copied to*/
 +	if (c[idx].bitmap) {
-+		index = c[idx].popcnt + POPCNT_RGT(c[idx].bitmap, idx_off);
++		index = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, idx_off);
 +                if (index >= CNK_16)
 +                    goto err;
 +		goto index_found;
@@ -439,7 +440,7 @@ index 0000000..a85ecea
 +	if (!c[idx].bitmap)
 +		c[idx].popcnt = (u16)index;
 +
-+	c[idx].bitmap |= (1ULL << idx_off);
++	c[idx].bitmap |= (MSK >> idx_off);
 +
 +	/*Update offset of the chunks to the right*/
 +	for (i = (long long)idx + 1; i < cnk_count; i++)
@@ -603,7 +604,7 @@ index 0000000..a85ecea
 +	if (prefix_len <= 32) {
 +		/*All the leafs in level 17-32 will be stored in level 32.*/
 +		num_leafs = 1U << (32 - prefix_len);
-+		for (i = 0, tmp = 1ULL << off; i < num_leafs; i++, tmp <<= 1) {
++		for (i = 0, tmp = MSK >> off; i < num_leafs; i++, tmp >>= 1) {
 +                    n_idx = calc_idx(&(p->B32[idx]), off + i);
 +                    if (p->B32[idx].bitmap & tmp) {                        
 +			/*Longer prefix exists*/
@@ -629,7 +630,7 @@ index 0000000..a85ecea
 +                    p->B32[i].popcnt += new_prefixes;
 +                }
 +
-+                bitmap = ((1ULL << num_leafs) - 1) << off;
++                bitmap = ((1ULL << num_leafs) - 1) << (64 - off - num_leafs);
 +                p->B32[idx].bitmap |= bitmap;
 +		goto finish;
 +	}
@@ -639,7 +640,7 @@ index 0000000..a85ecea
 +         * this prefix in level 40. So do the same as before
 +         */
 +
-+        if (!(p->C32[idx].bitmap & (1ULL << off))) {
++        if (!(p->C32[idx].bitmap & (MSK >> off))) {
 +                chunk_id = calc_cid(p->C32, idx, off);
 +                if (!chunk_id)
 +                        goto error;
@@ -675,7 +676,7 @@ index 0000000..a85ecea
 +        /* The length of the prefix is 41-64, but there is no chunk for
 +         * this prefix in the next level. So do the same as before
 +         */
-+        if (!(p->C40[c_idx].bitmap & (1ULL << off))) {
++        if (!(p->C40[c_idx].bitmap & (MSK >> off))) {
 +                chunk_id = calc_cid(p->C40, c_idx, off);
 +                if (!chunk_id)
 +                        goto error;
@@ -711,7 +712,7 @@ index 0000000..a85ecea
 +        /* The length of the prefix is 49-64, but there is no chunk for
 +         * this prefix in the next level. So do the same as before
 +         */
-+        if (!(p->C48[c_idx].bitmap & (1ULL << off))) {
++        if (!(p->C48[c_idx].bitmap & (MSK >> off))) {
 +                chunk_id = calc_cid(p->C48, c_idx, off);
 +                if (!chunk_id)
 +                        goto error;
@@ -734,7 +735,7 @@ index 0000000..a85ecea
 +        if (prefix_len <= 64) {
 +		/*All the leafs in level 49-64 will be stored in level 64.*/
 +		num_leafs = 1U << (64 - prefix_len);
-+		for (i = 0, tmp = 1ULL << off; i < num_leafs; i++, tmp <<= 1) {
++		for (i = 0, tmp = MSK >> off; i < num_leafs; i++, tmp >>= 1) {
 +                    n_idx = calc_idx(&(p->B64[idx]), off + i);
 +                    if (p->B64[idx].bitmap & tmp) {                        
 +			/*Longer prefix exists*/
@@ -759,7 +760,7 @@ index 0000000..a85ecea
 +                for (i = idx + 1; i < ELEMS_PER_CHUNK * p->cnk64_count; i++)
 +                    p->B64[i].popcnt += new_prefixes;
 +                
-+                bitmap = ((1ULL << num_leafs) - 1) << off;
++                bitmap = ((1ULL << num_leafs) - 1) << (64 - off - num_leafs);
 +                p->B64[idx].bitmap |= bitmap;
 +		goto finish;
 +        }       
@@ -812,7 +813,7 @@ index 0000000..a85ecea
 +        /*Find corresponding next-hop in level 32*/
 +        c = rcu_dereference(p->C32);
 +        b = rcu_dereference(p->B32);
-+        if (b[idx].bitmap & (1ULL << off)) {
++        if (b[idx].bitmap & (MSK >> off)) {
 +            n = rcu_dereference(p->N32);
 +            n_idx = calc_idx(&(b[idx]), off);
 +            netdev_index = n[n_idx];      
@@ -821,8 +822,8 @@ index 0000000..a85ecea
 +        /*Check if there is a longer prefix; if yes, extract 33-40 bit
 +         * and calculate index to N40
 +         */
-+        if (likely(c[idx].bitmap & (1ULL << off))) {
-+                ck_idx = c[idx].popcnt + POPCNT_RGT(c[idx].bitmap, off);
++        if (likely(c[idx].bitmap & (MSK >> off))) {
++                ck_idx = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, off);
 +                ck_off = (key >> 24) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
 +                c_idx = n_idx / 64;
@@ -840,8 +841,8 @@ index 0000000..a85ecea
 +         * and calculate index to N48
 +         */
 +        c = rcu_dereference(p->C40);
-+        if (likely(c[c_idx].bitmap & (1ULL << off))) {
-+                ck_idx = c[c_idx].popcnt + POPCNT_RGT(c[c_idx].bitmap, off);
++        if (likely(c[c_idx].bitmap & (MSK >> off))) {
++                ck_idx = c[c_idx].popcnt + POPCNT_LFT(c[c_idx].bitmap, off);
 +                ck_off = (key >> 16) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
 +                c_idx = n_idx / 64;
@@ -859,8 +860,8 @@ index 0000000..a85ecea
 +         * and calculate index to N64
 +         */
 +        c = rcu_dereference(p->C48);
-+        if (likely(c[c_idx].bitmap & (1ULL << off))) {
-+                ck_idx = c[c_idx].popcnt + POPCNT_RGT(c[c_idx].bitmap, off);
++        if (likely(c[c_idx].bitmap & (MSK >> off))) {
++                ck_idx = c[c_idx].popcnt + POPCNT_LFT(c[c_idx].bitmap, off);
 +                idx_sail = ck_idx * CNK_16 + (key & 0XFFFF);
 +                idx = idx_sail / 64;
 +                off = idx_sail % 64;
@@ -870,7 +871,7 @@ index 0000000..a85ecea
 +
 +        /*Find corresponding next-hop in level 64*/
 +        b = rcu_dereference(p->B64);
-+        if (b[idx].bitmap & (1ULL << off)) {
++        if (b[idx].bitmap & (MSK >> off)) {
 +            n = rcu_dereference(p->N64);
 +            n_idx = calc_idx(&(b[idx]), off);
 +            netdev_index = n[n_idx];      
