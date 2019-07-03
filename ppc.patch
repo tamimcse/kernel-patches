@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..729ce14
+index 0000000..9afea2b
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,745 @@
@@ -198,7 +198,7 @@ index 0000000..729ce14
 +#define POPCNT_RGT(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*POPCNT of left-most N bits of X*/
-+#define POPCNT_LFT(X, N) (hweight64(((0XFFFFFFFFFFFFFFFFULL << (63 - (N))) << 1) & (X)))
++#define POPCNT_LFT(X, N) (hweight64(((X) >> (63 - (N))) >> 1))
 +
 +static u16 calc_idx(struct bitmap_pc *c, u32 off)
 +{
