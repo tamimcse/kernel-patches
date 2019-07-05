@@ -133,10 +133,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..d20e5e3
+index 0000000..cc21eb3
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,745 @@
+@@ -0,0 +1,768 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -455,7 +455,7 @@ index 0000000..d20e5e3
 +
 +int ppc_insert(struct PPC *p, u64 key, u8 prefix_len, struct net_device *dev)
 +{
-+	int i;
++	int i, j;
 +	u8 *n16, *p16, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
 +	u16 *c16;
 +        struct bitmap_pc *b32, *c32, *c40, *c48, *b64;
@@ -472,6 +472,7 @@ index 0000000..d20e5e3
 +        u64 bitmap;
 +        u64 tmp;
 +        u32 new_prefixes = 0;
++        u32 remaining_leafs, cur_offset = 0, leafs_for_this_chunk = 0, cur_idx = 0;
 +
 +	spin_lock(&p->lock);
 +
@@ -735,9 +736,14 @@ index 0000000..d20e5e3
 +        if (prefix_len <= 64) {
 +		/*All the leafs in level 49-64 will be stored in level 64.*/
 +		num_leafs = 1U << (64 - prefix_len);
-+		for (i = 0, tmp = MSK >> off; i < num_leafs; i++, tmp >>= 1) {
-+                    n_idx = calc_idx(&(p->B64[idx]), off + i);
-+                    if (p->B64[idx].bitmap & tmp) {                        
++                cur_idx = idx;
++                cur_offset = off;
++                leafs_for_this_chunk = (num_leafs <= (64 - off))? num_leafs: (64 - off);
++                remaining_leafs = num_leafs - leafs_for_this_chunk;
++                
++                for (i = 0, tmp = MSK >> cur_offset; leafs_for_this_chunk > 0;) {
++                    n_idx = calc_idx(&(p->B64[cur_idx]), cur_offset + i);
++                    if (p->B64[cur_idx].bitmap & tmp) {                        
 +			/*Longer prefix exists*/
 +                        if (p->P64[n_idx] > prefix_len)
 +                                continue;
@@ -755,13 +761,30 @@ index 0000000..d20e5e3
 +                        new_prefixes++;
 +                        p->n64_cnt++;
 +                    }
-+		}
-+                
-+                for (i = idx + 1; i < ELEMS_PER_CHUNK * p->cnk64_count; i++)
-+                    p->B64[i].popcnt += new_prefixes;
-+                
-+                bitmap = ((1ULL << num_leafs) - 1) << (64 - off - num_leafs);
-+                p->B64[idx].bitmap |= bitmap;
++                    
++                    /*Need to move to next chunk*/
++                    if ((cur_offset + i) == 63) {
++                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK * p->cnk64_count; j++)
++                            p->B64[j].popcnt += new_prefixes;
++                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
++                        bitmap = (((1ULL << (leafs_for_this_chunk - 1)) << 1 ) - 1) << (64 - cur_offset - leafs_for_this_chunk);
++                        p->B64[cur_idx].bitmap |= bitmap;
++                        if (remaining_leafs > 0) {
++                            cur_idx++;
++                            cur_offset = 0;
++                            leafs_for_this_chunk = (remaining_leafs <= (64 - off))? remaining_leafs: (64 - off);
++                            remaining_leafs -= leafs_for_this_chunk;
++                            i = 0;
++                            tmp = MSK;
++                            new_prefixes = 0;                            
++                        } else {
++                            leafs_for_this_chunk = 0;
++                        }
++                    } else {
++                        i++;
++                        tmp >>= 1;
++                    }
++                }
 +		goto finish;
 +        }       
 +
