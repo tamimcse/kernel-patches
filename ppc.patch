@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..6d2a279
+index 0000000..ab0720d
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,789 @@
@@ -848,8 +848,8 @@ index 0000000..6d2a279
 +	c16 = rcu_dereference(p->C16);
 +	if (likely(c16[n16_idx] != 0)) {
 +		idx_sail = (c16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF);
-+                idx = idx_sail / 64;
-+                off = idx_sail % 64;
++                idx = idx_sail >> 6;
++                off = idx_sail & 63;
 +	} else {
 +		goto finish;
 +	}
@@ -870,8 +870,8 @@ index 0000000..6d2a279
 +                ck_idx = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, off);
 +                ck_off = (key >> 24) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
-+                c_idx = n_idx / 64;
-+                off = n_idx % 64;
++                c_idx = n_idx >> 6;
++                off = n_idx & 63;
 +        } else {
 +                goto finish;
 +        }
@@ -889,8 +889,8 @@ index 0000000..6d2a279
 +                ck_idx = c[c_idx].popcnt + POPCNT_LFT(c[c_idx].bitmap, off);
 +                ck_off = (key >> 16) & 0XFF;
 +                n_idx = ck_idx * CNK_8 + ck_off;
-+                c_idx = n_idx / 64;
-+                off = n_idx % 64;
++                c_idx = n_idx >> 6;
++                off = n_idx & 63;
 +        } else {
 +                goto finish;
 +        }
@@ -907,8 +907,8 @@ index 0000000..6d2a279
 +        if (likely(c[c_idx].bitmap & (MSK >> off))) {
 +                ck_idx = c[c_idx].popcnt + POPCNT_LFT(c[c_idx].bitmap, off);
 +                idx_sail = ck_idx * CNK_16 + (key & 0XFFFF);
-+                idx = idx_sail / 64;
-+                off = idx_sail % 64;
++                idx = idx_sail >> 6;
++                off = idx_sail & 63;
 +        } else {
 +                goto finish;
 +        }
