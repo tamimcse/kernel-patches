@@ -133,7 +133,7 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..ab0720d
+index 0000000..7f18f4b
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
 @@ -0,0 +1,789 @@
@@ -847,7 +847,7 @@ index 0000000..ab0720d
 +	 */
 +	c16 = rcu_dereference(p->C16);
 +	if (likely(c16[n16_idx] != 0)) {
-+		idx_sail = (c16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF);
++		idx_sail = ((c16[n16_idx] - 1) << 16) + ((key >> 32) & 0XFFFF);
 +                idx = idx_sail >> 6;
 +                off = idx_sail & 63;
 +	} else {
@@ -857,7 +857,7 @@ index 0000000..ab0720d
 +        /*Find corresponding next-hop in level 32*/
 +        c = rcu_dereference(p->C32);
 +        b = rcu_dereference(p->B32);
-+        if (b[idx].bitmap & (MSK >> off)) {
++        if (likely(b[idx].bitmap & (MSK >> off))) {
 +            n = rcu_dereference(p->N32);
 +            n_idx = b[idx].popcnt + POPCNT_LFT(b[idx].bitmap, off);
 +            netdev_index = n[n_idx];
@@ -869,7 +869,7 @@ index 0000000..ab0720d
 +        if (likely(c[idx].bitmap & (MSK >> off))) {
 +                ck_idx = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, off);
 +                ck_off = (key >> 24) & 0XFF;
-+                n_idx = ck_idx * CNK_8 + ck_off;
++                n_idx = (ck_idx << 8) + ck_off;
 +                c_idx = n_idx >> 6;
 +                off = n_idx & 63;
 +        } else {
@@ -888,7 +888,7 @@ index 0000000..ab0720d
 +        if (likely(c[c_idx].bitmap & (MSK >> off))) {
 +                ck_idx = c[c_idx].popcnt + POPCNT_LFT(c[c_idx].bitmap, off);
 +                ck_off = (key >> 16) & 0XFF;
-+                n_idx = ck_idx * CNK_8 + ck_off;
++                n_idx = (ck_idx << 8) + ck_off;
 +                c_idx = n_idx >> 6;
 +                off = n_idx & 63;
 +        } else {
@@ -906,7 +906,7 @@ index 0000000..ab0720d
 +        c = rcu_dereference(p->C48);
 +        if (likely(c[c_idx].bitmap & (MSK >> off))) {
 +                ck_idx = c[c_idx].popcnt + POPCNT_LFT(c[c_idx].bitmap, off);
-+                idx_sail = ck_idx * CNK_16 + (key & 0XFFFF);
++                idx_sail = (ck_idx << 16) + (key & 0XFFFF);
 +                idx = idx_sail >> 6;
 +                off = idx_sail & 63;
 +        } else {
@@ -915,10 +915,10 @@ index 0000000..ab0720d
 +
 +        /*Find corresponding next-hop in level 64*/
 +        b = rcu_dereference(p->B64);
-+        if (b[idx].bitmap & (MSK >> off)) {
++        if (likely(b[idx].bitmap & (MSK >> off))) {
 +            n = rcu_dereference(p->N64);
 +            n_idx = b[idx].popcnt + POPCNT_LFT(b[idx].bitmap, off);
-+            netdev_index = n[n_idx];      
++            netdev_index = n[n_idx];
 +        }
 +
 +finish:
