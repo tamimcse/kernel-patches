@@ -1,0 +1,1201 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index b22e7fd..969e625 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -7630,6 +7630,11 @@ M:	Juanjo Ciarlante <jjciarla@raiz.uncu.edu.ar>
+ S:	Maintained
+ F:	net/ipv4/netfilter/ipt_MASQUERADE.c
+ 
++SAIL FIB LOOKUP
++M:	MD Iftakharul Islam (Tamim) <tamim@csebuet.org>
++S:	Maintained
++F:	net/ipv4/fib_sail_xdp.c
++
+ IPMI SUBSYSTEM
+ M:	Corey Minyard <minyard@acm.org>
+ L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
+diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
+index 3d49305..057af54 100644
+--- a/include/net/ip6_fib.h
++++ b/include/net/ip6_fib.h
+@@ -40,6 +40,72 @@
+ struct rt6_info;
+ struct fib6_info;
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++/*
++ * The router can have upto 255 ports. This limitation
++ * allows us to represent netdev_index as an u8
++ */
++#define NETDEV_COUNT_MAX 255
++
++struct bitmap_pc {
++    u64 bitmap;
++    u16 popcnt;
++};
++
++struct PPC {
++	/*default next-hop (Level 0)*/
++	u8	def_nh;
++
++	/*Level 16*/
++	u8 __rcu *N16;
++	u8 __rcu *P16;
++	u16 __rcu *C16;
++        
++	/*Level 32*/
++	u8 __rcu *N32;
++	u8 __rcu *P32;
++        struct bitmap_pc __rcu *B32;
++        struct bitmap_pc __rcu *C32;
++	u32 cnk32_count;/*Number of chunks in level 32*/
++        u64 n32_cnt;/*Number of elements in N32*/
++
++
++	/*Level 40*/
++	u8 __rcu *N40;
++	u8 __rcu *P40;
++        struct bitmap_pc __rcu *B40;
++        struct bitmap_pc __rcu *C40;
++	u32 cnk40_count;/*Number of chunks in level 40*/
++        u64 n40_cnt;/*Number of elements in N40*/
++        
++	/*Level 48*/
++	u8 __rcu *N48;
++	u8 __rcu *P48;
++        struct bitmap_pc __rcu *B48;
++        struct bitmap_pc __rcu *C48;
++	u32 cnk48_count;/*Number of chunks in level 48*/
++        u64 n48_cnt;/*Number of elements in N48*/
++
++
++	/*Level 64*/
++        struct bitmap_pc __rcu *B64;
++	u8 __rcu *N64;
++	u8 __rcu *P64;
++        u32 cnk64_count;/*Number of chunks in level 64*/
++        u64 n64_cnt;/*Number of elements in N64*/
++
++	/*Index to this array is stored in N16, N24 and N32*/
++	struct net_device	*netdevs[NETDEV_COUNT_MAX];
++	u8 netdev_count;/*Number of netdevs*/
++
++	spinlock_t lock;
++};
++
++int ppc_insert(struct PPC *p, u64 key, u8 prefix_len, struct net_device *dev);
++int ppc_lookup(const struct PPC *p, const u64 dest, struct net_device **dev);
++#endif
++
++
+ struct fib6_config {
+ 	u32		fc_table;
+ 	u32		fc_metric;
+@@ -342,6 +408,10 @@ struct fib6_table {
+ 	struct fib6_node	tb6_root;
+ 	struct inet_peer_base	tb6_peers;
+ 	unsigned int		flags;
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	/*Each FIB table will have its own PPC structure.*/
++	struct PPC	ppc;
++#endif
+ 	unsigned int		fib_seq;
+ #define RT6_TABLE_HAS_DFLT_ROUTER	BIT(0)
+ };
+diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
+index 32cae39..5c41071 100644
+--- a/net/ipv4/Kconfig
++++ b/net/ipv4/Kconfig
+@@ -52,6 +52,17 @@ config IP_ADVANCED_ROUTER
+ 
+ 	  If unsure, say N here.
+ 
++config FIB_SAIL_XDP
++	bool "SAIL based FIB lookup for XDP"
++	depends on !IP_ROUTE_MULTIPATH && !LWTUNNEL
++	default y
++	help
++	  This option will enable SAIL based routing table lookup for XDP
++	  forwarding. This will store FIB table as a SAIL (along with
++	  LC-trie). Currently it only supports up to 255 ports. Currently
++	  it does not support multi-path routing and light-weight
++	  tunnels such as MPLS.
++
+ config IP_FIB_TRIE_STATS
+ 	bool "FIB TRIE statistics"
+ 	depends on IP_ADVANCED_ROUTER
+diff --git a/net/ipv6/Makefile b/net/ipv6/Makefile
+index e0026fa..3cf2572 100644
+--- a/net/ipv6/Makefile
++++ b/net/ipv6/Makefile
+@@ -48,6 +48,7 @@ obj-$(CONFIG_IPV6_SIT) += sit.o
+ obj-$(CONFIG_IPV6_TUNNEL) += ip6_tunnel.o
+ obj-$(CONFIG_IPV6_GRE) += ip6_gre.o
+ obj-$(CONFIG_IPV6_FOU) += fou6.o
++obj-$(CONFIG_FIB_SAIL_XDP) += fib_sail_xdp.o
+ 
+ obj-y += addrconf_core.o exthdrs_core.o ip6_checksum.o ip6_icmp.o
+ obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
+diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
+new file mode 100644
+index 0000000..f9d3579
+--- /dev/null
++++ b/net/ipv6/fib_sail_xdp.c
+@@ -0,0 +1,893 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ *   This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ */
++
++#include <net/ip6_fib.h>
++
++/*The length of N16, P16 and C16 is 2^16*/
++#define LEVEL16_SIZE 65536
++
++/*Number of chunks in level 32*/
++#define NUM32 64
++
++/*Number of chunks in level 40 and 48*/
++#define NUM40 16384
++
++/*Number of chunks in level 64*/
++#define NUM64 400
++
++/*As we group each 64 elements, each chunk in level 32 and level 64 
++ * contains 1024 (65536/64) elements. On the other hand, chunks in level 40 and 
++ * level 48 contain 4 (256/64) chunks */
++#define ELEMS_PER_CHUNK 1024
++#define ELEMS_PER_CHUNK_40 4
++
++/*The size of B32 and C32. Here each chunk consists of 64 groups*/
++#define B32_SIZE NUM32 * ELEMS_PER_CHUNK
++
++/*The size of N32/P32/N64/P64*/
++#define N32_SIZE 65536
++
++/*The size of N64/P64*/
++#define N64_SIZE 655360
++
++/*The size of C40 and C48. Here each chunk consists of 4 groups*/
++#define B40_B48_SIZE NUM40 * ELEMS_PER_CHUNK_40
++
++/*The size of N40/P40/N48/P48. We assume each chunk on average will have 16 elements*/
++#define N40_N48_SIZE NUM40 * 16
++
++#define B64_SIZE NUM64 * 64
++
++/*chunk size is 2^16*/
++#define CNK_16 65536
++
++/*chunk size is 2^8*/
++#define CNK_8 256
++
++#define MSK 0X8000000000000000ULL
++
++/*Calculates the number of bits set to 1*/
++#define POPCNT(X) (hweight64(X))
++
++/*POPCNT of right-most N bits of X*/
++#define POPCNT_RGT(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
++
++/*POPCNT of left-most N bits of X*/
++#define POPCNT_LFT(X, N) (hweight64(((X) >> (63 - (N))) >> 1))
++
++static u16 calc_idx(struct bitmap_pc *c, u32 off)
++{
++	return c->popcnt + POPCNT_LFT(c->bitmap, off);
++}
++
++/*Converts a net_device to corresponding netdev_index*/
++static u8 get_netdev_index(struct PPC *p, struct net_device *dev)
++{
++	u8 i;
++
++	/*checks if the net_device is already seen; if yes then return the
++	 *corresponding index
++	 */
++	for (i = 0; i < p->netdev_count; i++) {
++		if (p->netdevs[i] == dev)
++			return i;
++	}
++	/*If the net_device is not previously seen, then add it to the array*/
++	p->netdevs[p->netdev_count++] = dev;
++	return p->netdev_count - 1;
++}
++
++/* Insert a new chunk to a level at chunk_id-1. Note that Chunk ID
++ * starts from 1, not 0. This function increments cnk_count of sail.
++ * This is why, it is passed by reference
++ */
++static int bc_arr_insert(struct bitmap_pc *B, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id, u16 max_cnk_cnt, u16 elems_per_chunk)
++{
++	long long m;
++        u16 b_popcnt = 0, c_popcnt = 0; 
++
++	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id");
++		return -EINVAL;
++	}
++
++	if (*cnk_count >= max_cnk_cnt) {
++		pr_err("Cannot insert a new chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++        memmove(&B[chunk_id * elems_per_chunk], 
++                &B[(chunk_id - 1) * elems_per_chunk], 
++                (*cnk_count - chunk_id + 1) * elems_per_chunk);
++        if (C) {
++            memmove(&C[chunk_id * elems_per_chunk], 
++                    &C[(chunk_id - 1) * elems_per_chunk], 
++                    (*cnk_count - chunk_id + 1) * elems_per_chunk);
++        }
++
++        /*Find the popcnt of the last element to the left*/
++        if (chunk_id > 1) {
++            b_popcnt = B[(chunk_id - 1) * elems_per_chunk - 1].popcnt;
++            if (C)
++                c_popcnt = C[(chunk_id - 1) * elems_per_chunk - 1].popcnt;
++        }
++            
++	/*Reset the newly created empty chunk*/
++	m = (chunk_id - 1) * elems_per_chunk;
++	for (; m < chunk_id * elems_per_chunk; m++) {
++            B[m].bitmap = 0;
++            B[m].popcnt = b_popcnt;
++            if (C) {
++                C[m].bitmap = 0;
++                C[m].popcnt = c_popcnt;
++            }
++	}
++
++	++(*cnk_count);
++	return 0;
++}
++//
++//static int chunk_insert(u8 *N, u8 *P, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
++//{
++//	long long m;
++//        u16 c_popcnt = 0; 
++//        int elems_per_chunk_c_arr = cnk_size / 64;
++//
++//	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
++//		pr_err("Invalid chunk_id");
++//		return -EINVAL;
++//	}
++//
++//	if (*cnk_count >= NUM40) {
++//		pr_err("Cannot insert a new chunk. The chunk array is full");
++//		return -EINVAL;
++//	}
++//
++//	/*shift each element one step right to make
++//	 *space for the new one
++//	 */      
++//        memmove(&N[chunk_id * cnk_size], &N[(chunk_id - 1) * cnk_size], 
++//                (*cnk_count - chunk_id + 1) * cnk_size);
++//        memmove(&P[chunk_id * cnk_size], &P[(chunk_id - 1) * cnk_size], 
++//                (*cnk_count - chunk_id + 1) * cnk_size);
++//
++//	/*Reset the newly created empty chunk*/
++//	m = (chunk_id - 1) * cnk_size;
++//	for (; m < chunk_id * cnk_size; m++) {
++//		N[m] = 0;
++//		P[m] = 0;
++//	}
++//        
++//        if (!C)
++//            goto finish;
++//        
++//	/*shift each element one step right to make
++//	 *space for the new one
++//	 */
++//        memmove(&C[chunk_id * elems_per_chunk_c_arr], 
++//                &C[(chunk_id - 1) * elems_per_chunk_c_arr], 
++//                (*cnk_count - chunk_id + 1) * elems_per_chunk_c_arr);
++//
++//        /*Find the popcnt of the last element to the left*/
++//        if (chunk_id > 1)
++//            c_popcnt = C[(chunk_id - 1) * elems_per_chunk_c_arr - 1].popcnt;
++//        
++//	/*Reset the newly created empty chunk*/
++//	m = (chunk_id - 1) * elems_per_chunk_c_arr;
++//	for (; m < chunk_id * elems_per_chunk_c_arr; m++) {
++//            C[m].bitmap = 0;
++//            C[m].popcnt = c_popcnt;
++//	}
++//
++//finish:
++//	++(*cnk_count);
++//	return 0;
++//}
++
++/*Calculate the chunk ID for level 24 based on C16*/
++static u16 calc_ckid24_from_C16(u16 *c16, u32 c16_size, u16 idx16)
++{
++	long long i;
++
++	if (idx16 >= c16_size) {
++		pr_err("Index needs to be smaller than arr_size");
++		return 0;
++	}
++
++	/*Find the first chunk ID to the left and increment that by 1*/
++	for (i = (long long)idx16 - 1; i >= 0; i--) {
++		if (c16[i] > 0)
++			return c16[i] + 1;
++	}
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++}
++
++/*Update C16 based on the newly inserted chunk*/
++static int update_C16(u16 *c16, u32 c16_size,
++		      u16 idx16, u16 chunk_id)
++{
++	long long i;
++
++	if (idx16 >= c16_size) {
++		pr_err("Invalid index");
++		return -EINVAL;
++	}
++
++	c16[idx16] = chunk_id;
++
++	/* Increment chunk ID to the right */
++	for (i = idx16 + 1; i < c16_size; i++) {
++		if (c16[i] > 0)
++			c16[i]++;
++	}
++
++	return 0;
++}
++
++/*Calculate the chunk ID for upper level based on CK and C of lower level*/
++static u16 calc_cid(struct bitmap_pc *c, u16 idx, u64 idx_off)
++{
++	long long i;
++	long long index = 0;
++        
++	/*find the index to C24 where previous chunk ID would be found*/
++	if (c[idx].bitmap) {
++		index = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, idx_off) - 1;
++                if (index >= CNK_16 - 2)
++                    goto err;
++		if (index >= 0)
++			return index + 2;
++	}
++
++	for (i = (long long)idx - 1; i >= 0; i--) {
++            if (c[i].bitmap) {
++                    index = c[i].popcnt + POPCNT(c[i].bitmap) - 1;
++                    if (index >= CNK_16 - 2)
++                        goto err;
++                    return index + 2;
++            }
++	}
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++err:
++        pr_err("Invalid index");
++        return -EINVAL;
++}
++
++/*Update CK and C based on the newly inserted chunk*/
++static int update_c(struct bitmap_pc *c, u32 idx, u32 idx_off, u32 cnk_count)
++{
++	long long i;
++	u64 index = 0;
++
++	if (c[idx].bitmap & (MSK >> idx_off)) {
++		pr_err("Error: bitmap is already set");
++		return -EINVAL;
++	}
++
++	/*find the index where Chunk ID should be copied to*/
++	if (c[idx].bitmap) {
++		index = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, idx_off);
++                if (index >= CNK_16)
++                    goto err;
++		goto index_found;
++	}
++
++	/*Find a chunk to the left which is not empty*/
++	for (i = (long long)idx - 1; i >= 0; i--) {
++            if (c[i].bitmap) {
++                    index = c[i].popcnt + POPCNT(c[i].bitmap);
++                    if (index >= CNK_16)
++                        goto err;
++                    goto index_found;
++            }	
++        }
++
++index_found:
++
++	/*This is the first element of this chunk*/
++	if (!c[idx].bitmap)
++		c[idx].popcnt = (u16)index;
++
++	c[idx].bitmap |= (MSK >> idx_off);
++
++	/*Update offset of the chunks to the right*/
++	for (i = (long long)idx + 1; i < cnk_count; i++)
++            if (c[i].bitmap)
++                    c[i].popcnt++;
++
++	return 0;
++err:
++        pr_err("Invalid index");
++        return -EINVAL;
++}
++
++int ppc_insert(struct PPC *p, u64 key, u8 prefix_len, struct net_device *dev)
++{
++	int i, j;
++	u8 *n16, *p16, *n32, *p32, *n40, *p40, *n48, *p48, *n64, *p64;
++	u16 *c16;
++        struct bitmap_pc *b32, *c32, *b40, *c40, *b48, *c48, *b64;
++	u16 chunk_id = 0;
++        u32 n_idx;
++        u32 c_idx;
++        u32 idx, idx_sail;
++        u16 ck_idx;
++	u16 n16_idx;/*Index to N16, P16 and C16*/	     
++	u32 off;
++	u32 num_leafs;/*Number of leafs need to be inserted for this prefix*/
++	u8 netdev_index = get_netdev_index(p, dev);
++	int err = 0;
++        u64 bitmap;
++        u64 tmp;
++        u32 new_prefixes = 0;
++        u32 remaining_leafs, cur_offset = 0, leafs_for_this_chunk = 0, cur_idx = 0;
++
++	spin_lock(&p->lock);
++
++	/* Default route */
++	if (prefix_len == 0) {
++		p->def_nh = netdev_index;
++		goto finish;
++	}
++
++	/* Preallocate all the arrays at once*/
++	if (!p->N16) {
++		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
++		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
++		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
++                
++                n32 = kcalloc(N32_SIZE, sizeof(*n32), GFP_ATOMIC);
++                p32 = kcalloc(N32_SIZE, sizeof(*p32), GFP_ATOMIC);
++                b32 = kcalloc(B32_SIZE, sizeof(*b32), GFP_ATOMIC);
++                c32 = kcalloc(B32_SIZE, sizeof(*c32), GFP_ATOMIC);
++
++                n40 = kcalloc(N40_N48_SIZE, sizeof(*n40), GFP_ATOMIC);
++                p40 = kcalloc(N40_N48_SIZE, sizeof(*p40), GFP_ATOMIC);
++                b40 = kcalloc(B40_B48_SIZE, sizeof(*b40), GFP_ATOMIC);
++                c40 = kcalloc(B40_B48_SIZE, sizeof(*c40), GFP_ATOMIC);
++                
++                n48 = kcalloc(N40_N48_SIZE, sizeof(*n48), GFP_ATOMIC);
++                p48 = kcalloc(N40_N48_SIZE, sizeof(*p48), GFP_ATOMIC);
++                b48 = kcalloc(B40_B48_SIZE, sizeof(*b48), GFP_ATOMIC);
++                c48 = kcalloc(B40_B48_SIZE, sizeof(*c48), GFP_ATOMIC);
++
++                n64 = kcalloc(N64_SIZE, sizeof(*n64), GFP_ATOMIC);
++                p64 = kcalloc(N64_SIZE, sizeof(*p64), GFP_ATOMIC);
++                b64 = kcalloc(B64_SIZE, sizeof(*b64), GFP_ATOMIC);
++                
++		if (!n16 || !c16 || !p16 || !n32 || !p32 || !b32 || !c32
++                        || !n40 || !p40 || !c40 || !b40 || 
++                        !n48 || !p48 || !c48 || !b48 || !n64 || !p64 || !b64) {
++			kfree(n16);
++			kfree(c16);
++			kfree(p16);
++                        kfree(n32);
++                        kfree(b32);
++                        kfree(c32);
++                        kfree(p32);
++                        kfree(n40);
++                        kfree(p40);
++                        kfree(b40);
++                        kfree(c40);
++                        kfree(n48);
++                        kfree(p48);
++                        kfree(b48);
++                        kfree(c48);
++                        kfree(n64);
++                        kfree(p64);
++                        kfree(b64);
++			pr_err("Out of memory while preallocating  SAIL");
++			goto error;
++		}
++
++		RCU_INIT_POINTER(p->N16, n16);
++		RCU_INIT_POINTER(p->P16, p16);
++		RCU_INIT_POINTER(p->C16, c16);
++
++                RCU_INIT_POINTER(p->N32, n32);
++                RCU_INIT_POINTER(p->P32, p32);
++                RCU_INIT_POINTER(p->B32, b32);
++                RCU_INIT_POINTER(p->C32, c32);
++                p->n32_cnt = 0;
++
++                RCU_INIT_POINTER(p->N40, n40);
++                RCU_INIT_POINTER(p->P40, p40);
++                RCU_INIT_POINTER(p->B40, b40);
++                RCU_INIT_POINTER(p->C40, c40);
++                
++                RCU_INIT_POINTER(p->N48, n48);
++                RCU_INIT_POINTER(p->P48, p48);
++                RCU_INIT_POINTER(p->B48, b48);
++                RCU_INIT_POINTER(p->C48, c48);
++
++                RCU_INIT_POINTER(p->N64, n64);
++                RCU_INIT_POINTER(p->P64, p64);
++                RCU_INIT_POINTER(p->B64, b64);
++                p->n64_cnt = 0;
++                
++		synchronize_rcu();
++	}
++
++	/*Eextract 16 bits from MSB.*/
++	n16_idx = key >> 48;
++
++	if (prefix_len <= 16) {
++		/*All the leafs in level 1~16 will be stored in level 16.*/
++		num_leafs = 1U << (16 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (p->P16[n16_idx + i] > prefix_len)
++				continue;
++			p->N16[n16_idx + i] = netdev_index;
++			p->P16[n16_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The length of the prefix is 17-64. So need to check if there is a
++	 * chunk for this prefix in level 32. C16[n16_idx] = 0 indicates that there
++	 * is no chunk, so need to insert one. The insertion works as
++	 * following:
++	 * 1. Calculate the chunk ID to level 32 from C16. The Chunk ID
++	 * indicates where the new chunk should be inserted.
++	 * 2. Insert a new chunk in level 32
++	 * 3. Update the C16 based on the newly inserted chunk
++	 */
++	if (p->C16[n16_idx] == 0) {
++		/*Step 1*/
++		chunk_id = calc_ckid24_from_C16(p->C16, LEVEL16_SIZE, n16_idx);
++		if (!chunk_id)
++			goto error;
++		/*Step 2*/
++		err = bc_arr_insert(p->B32, p->C32, &p->cnk32_count, chunk_id, NUM32, ELEMS_PER_CHUNK);
++		if (err) {
++                        pr_err("Could not insert chunk to level 32");
++			goto error;
++                }
++		/*Step 3*/
++		err = update_C16(p->C16, LEVEL16_SIZE, n16_idx, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	/*Extract bit 17-32 and calculate index to B32/C32*/
++        idx_sail = (p->C16[n16_idx] - 1) * CNK_16 + ((key >> 32) & 0XFFFF);
++        idx = idx_sail / 64;
++        /*bit offset in a 64-bit bitmap*/
++        off = idx_sail % 64;
++        
++	if (prefix_len <= 32) {
++		/*All the leafs in level 17-32 will be stored in level 32.*/
++		num_leafs = 1U << (32 - prefix_len);
++                cur_idx = idx;
++                cur_offset = off;
++                leafs_for_this_chunk = (num_leafs <= (64 - off))? num_leafs: (64 - off);
++                remaining_leafs = num_leafs - leafs_for_this_chunk;
++                
++                for (i = 0, tmp = MSK >> cur_offset; leafs_for_this_chunk > 0;) {
++                    n_idx = calc_idx(&(p->B32[cur_idx]), cur_offset + i);
++                    if (p->B32[cur_idx].bitmap & tmp) {                        
++			/*Longer prefix exists*/
++                        if (p->P32[n_idx] > prefix_len)
++                                continue;
++                        p->N32[n_idx] = netdev_index;
++                        p->P32[n_idx] = prefix_len;
++                    } else {
++                        if (n_idx >= N32_SIZE)
++                            goto error;
++                        /*Shift each element one step right to make room
++                         for the new element*/
++                        memmove(&p->N32[n_idx + 1], &p->N32[n_idx], (p->n32_cnt - n_idx) * sizeof (p->N32[0]));
++                        memmove(&p->P32[n_idx + 1], &p->P32[n_idx], (p->n32_cnt - n_idx) * sizeof (p->P32[0]));
++                        p->N32[n_idx] = netdev_index;
++                        p->P32[n_idx] = prefix_len;
++                        new_prefixes++;
++                        p->n32_cnt++;
++                    }
++                    
++                    /*Need to move to next chunk*/
++                    if ((cur_offset + i) == 63) {
++                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK * p->cnk32_count; j++)
++                            p->B32[j].popcnt += new_prefixes;
++                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
++                        bitmap = (((1ULL << (leafs_for_this_chunk - 1)) << 1 ) - 1) << (64 - cur_offset - leafs_for_this_chunk);
++                        p->B32[cur_idx].bitmap |= bitmap;
++                        if (remaining_leafs > 0) {
++                            cur_idx++;
++                            cur_offset = 0;
++                            leafs_for_this_chunk = (remaining_leafs <= (64 - off))? remaining_leafs: (64 - off);
++                            remaining_leafs -= leafs_for_this_chunk;
++                            i = 0;
++                            tmp = MSK;
++                            new_prefixes = 0;                            
++                        } else {
++                            leafs_for_this_chunk = 0;
++                        }
++                    } else {
++                        i++;
++                        tmp >>= 1;
++                        if (i == leafs_for_this_chunk)
++                            leafs_for_this_chunk = 0;
++                    }
++                }
++		goto finish;
++	}
++
++
++        /* The length of the prefix is 33-64, but there is no chunk for
++         * this prefix in level 40. So do the same as before
++         */
++
++        if (!(p->C32[idx].bitmap & (MSK >> off))) {
++                chunk_id = calc_cid(p->C32, idx, off);
++                if (!chunk_id)
++                        goto error;
++                err = bc_arr_insert(p->B40, p->C40, &p->cnk40_count, chunk_id, NUM40, ELEMS_PER_CHUNK_40);
++		if (err) {
++                        pr_err("Could not insert chunk to level 40");
++			goto error;
++                }
++                err = update_c(p->C32, idx, off, p->cnk32_count);
++                if (err)
++                        goto error;
++        }
++
++        ck_idx = calc_idx(&(p->C32[idx]), off);
++        /*Extract 33-40 bit and calculate index to level 40*/
++        idx_sail = (ck_idx * CNK_8) + ((key >> 24) & 0XFF);
++        idx = idx_sail / 64; 
++        off = idx_sail % 64;
++
++        if (prefix_len <= 40) {
++                /*All the leafs in level 33~40 will be stored in level 40.*/
++		num_leafs = 1U << (40 - prefix_len);
++                cur_idx = idx;
++                cur_offset = off;
++                leafs_for_this_chunk = (num_leafs <= (64 - off))? num_leafs: (64 - off);
++                remaining_leafs = num_leafs - leafs_for_this_chunk;
++                
++                for (i = 0, tmp = MSK >> cur_offset; leafs_for_this_chunk > 0;) {
++                    n_idx = calc_idx(&(p->B40[cur_idx]), cur_offset + i);
++                    if (p->B40[cur_idx].bitmap & tmp) {                        
++			/*Longer prefix exists*/
++                        if (p->P40[n_idx] > prefix_len)
++                                continue;
++                        p->N40[n_idx] = netdev_index;
++                        p->P40[n_idx] = prefix_len;
++                    } else {
++                        if (n_idx >= N40_N48_SIZE)
++                            goto error;
++                        /*Shift each element one step right to make room
++                         for the new element*/
++                        memmove(&p->N40[n_idx + 1], &p->N40[n_idx], (p->n40_cnt - n_idx) * sizeof (p->N40[0]));
++                        memmove(&p->P40[n_idx + 1], &p->P40[n_idx], (p->n40_cnt - n_idx) * sizeof (p->P40[0]));
++                        p->N40[n_idx] = netdev_index;
++                        p->P40[n_idx] = prefix_len;
++                        new_prefixes++;
++                        p->n40_cnt++;
++                    }
++                    
++                    /*Need to move to next chunk*/
++                    if ((cur_offset + i) == 63) {
++                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK_40 * p->cnk40_count; j++)
++                            p->B40[j].popcnt += new_prefixes;
++                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
++                        bitmap = (((1ULL << (leafs_for_this_chunk - 1)) << 1 ) - 1) << (64 - cur_offset - leafs_for_this_chunk);
++                        p->B40[cur_idx].bitmap |= bitmap;
++                        if (remaining_leafs > 0) {
++                            cur_idx++;
++                            cur_offset = 0;
++                            leafs_for_this_chunk = (remaining_leafs <= (64 - off))? remaining_leafs: (64 - off);
++                            remaining_leafs -= leafs_for_this_chunk;
++                            i = 0;
++                            tmp = MSK;
++                            new_prefixes = 0;                            
++                        } else {
++                            leafs_for_this_chunk = 0;
++                        }
++                    } else {
++                        i++;
++                        tmp >>= 1;
++                        if (i == leafs_for_this_chunk)
++                            leafs_for_this_chunk = 0;
++                    }
++                }
++                goto finish;
++        }
++        
++        /* The length of the prefix is 41-64, but there is no chunk for
++         * this prefix in the next level. So do the same as before
++         */
++        if (!(p->C40[idx].bitmap & (MSK >> off))) {
++                chunk_id = calc_cid(p->C40, idx, off);
++                if (!chunk_id)
++                        goto error;
++                err = bc_arr_insert(p->B48, p->C48, &p->cnk48_count, chunk_id, NUM40, ELEMS_PER_CHUNK_40);
++		if (err) {
++                        pr_err("Could not insert chunk to level 48");
++			goto error;
++                }
++                err = update_c(p->C40, idx, off, p->cnk40_count);
++                if (err)
++                        goto error;
++        }
++        
++        ck_idx = calc_idx(&(p->C40[idx]), off);
++        /*Extract 41-48 bit and calculate index to level 48*/
++        idx_sail = (ck_idx * CNK_8) + ((key >> 16) & 0XFF);
++        idx = idx_sail / 64; 
++        off = idx_sail % 64;
++
++        if (prefix_len <= 48) {
++                /*All the leafs in level 41~48 will be stored in level 48.*/
++		num_leafs = 1U << (48 - prefix_len);
++                cur_idx = idx;
++                cur_offset = off;
++                leafs_for_this_chunk = (num_leafs <= (64 - off))? num_leafs: (64 - off);
++                remaining_leafs = num_leafs - leafs_for_this_chunk;
++                
++                for (i = 0, tmp = MSK >> cur_offset; leafs_for_this_chunk > 0;) {
++                    n_idx = calc_idx(&(p->B48[cur_idx]), cur_offset + i);
++                    if (p->B48[cur_idx].bitmap & tmp) {                        
++			/*Longer prefix exists*/
++                        if (p->P48[n_idx] > prefix_len)
++                                continue;
++                        p->N48[n_idx] = netdev_index;
++                        p->P48[n_idx] = prefix_len;
++                    } else {
++                        if (n_idx >= N40_N48_SIZE)
++                            goto error;
++                        /*Shift each element one step right to make room
++                         for the new element*/
++                        memmove(&p->N48[n_idx + 1], &p->N48[n_idx], (p->n48_cnt - n_idx) * sizeof (p->N48[0]));
++                        memmove(&p->P48[n_idx + 1], &p->P48[n_idx], (p->n48_cnt - n_idx) * sizeof (p->P48[0]));
++                        p->N48[n_idx] = netdev_index;
++                        p->P48[n_idx] = prefix_len;
++                        new_prefixes++;
++                        p->n48_cnt++;
++                    }
++                    
++                    /*Need to move to next chunk*/
++                    if ((cur_offset + i) == 63) {
++                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK_40 * p->cnk48_count; j++)
++                            p->B48[j].popcnt += new_prefixes;
++                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
++                        bitmap = (((1ULL << (leafs_for_this_chunk - 1)) << 1 ) - 1) << (64 - cur_offset - leafs_for_this_chunk);
++                        p->B48[cur_idx].bitmap |= bitmap;
++                        if (remaining_leafs > 0) {
++                            cur_idx++;
++                            cur_offset = 0;
++                            leafs_for_this_chunk = (remaining_leafs <= (64 - off))? remaining_leafs: (64 - off);
++                            remaining_leafs -= leafs_for_this_chunk;
++                            i = 0;
++                            tmp = MSK;
++                            new_prefixes = 0;                            
++                        } else {
++                            leafs_for_this_chunk = 0;
++                        }
++                    } else {
++                        i++;
++                        tmp >>= 1;
++                        if (i == leafs_for_this_chunk)
++                            leafs_for_this_chunk = 0;
++                    }
++                }
++                goto finish;
++        }
++        
++        /* The length of the prefix is 49-64, but there is no chunk for
++         * this prefix in the next level. So do the same as before
++         */
++        if (!(p->C48[idx].bitmap & (MSK >> off))) {
++                chunk_id = calc_cid(p->C48, idx, off);
++                if (!chunk_id)
++                        goto error;
++                err = bc_arr_insert(p->B64, NULL, &p->cnk64_count, chunk_id, NUM64, ELEMS_PER_CHUNK);
++		if (err) {
++                        pr_err("Could not insert chunk to level 64");
++			goto error;
++                }
++                err = update_c(p->C48, idx, off, p->cnk48_count);
++                if (err)
++                        goto error;
++        }
++
++        /*Extract 49-64 bit and calculate index to level 64*/
++        ck_idx = calc_idx(&(p->C48[idx]), off);
++        idx_sail = (ck_idx * CNK_16) + (key & 0XFFFF);        
++        idx = idx_sail / 64;
++        off = idx_sail % 64;
++
++        if (prefix_len <= 64) {
++		/*All the leafs in level 49-64 will be stored in level 64.*/
++		num_leafs = 1U << (64 - prefix_len);
++                cur_idx = idx;
++                cur_offset = off;
++                leafs_for_this_chunk = (num_leafs <= (64 - off))? num_leafs: (64 - off);
++                remaining_leafs = num_leafs - leafs_for_this_chunk;
++                
++                for (i = 0, tmp = MSK >> cur_offset; leafs_for_this_chunk > 0;) {
++                    n_idx = calc_idx(&(p->B64[cur_idx]), cur_offset + i);
++                    if (p->B64[cur_idx].bitmap & tmp) {                        
++			/*Longer prefix exists*/
++                        if (p->P64[n_idx] > prefix_len)
++                                continue;
++                        p->N64[n_idx] = netdev_index;
++                        p->P64[n_idx] = prefix_len;
++                    } else {
++                        if (n_idx >= N64_SIZE)
++                            goto error;
++                        /*Shift each element one step right to make room
++                         for the new element*/
++                        memmove(&p->N64[n_idx + 1], &p->N64[n_idx], (p->n64_cnt - n_idx) * sizeof (p->N64[0]));
++                        memmove(&p->P64[n_idx + 1], &p->P64[n_idx], (p->n64_cnt - n_idx) * sizeof (p->P64[0]));
++                        p->N64[n_idx] = netdev_index;
++                        p->P64[n_idx] = prefix_len;
++                        new_prefixes++;
++                        p->n64_cnt++;
++                    }
++                    
++                    /*Need to move to next chunk*/
++                    if ((cur_offset + i) == 63) {
++                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK * p->cnk64_count; j++)
++                            p->B64[j].popcnt += new_prefixes;
++                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
++                        bitmap = (((1ULL << (leafs_for_this_chunk - 1)) << 1 ) - 1) << (64 - cur_offset - leafs_for_this_chunk);
++                        p->B64[cur_idx].bitmap |= bitmap;
++                        if (remaining_leafs > 0) {
++                            cur_idx++;
++                            cur_offset = 0;
++                            leafs_for_this_chunk = (remaining_leafs <= (64 - off))? remaining_leafs: (64 - off);
++                            remaining_leafs -= leafs_for_this_chunk;
++                            i = 0;
++                            tmp = MSK;
++                            new_prefixes = 0;                            
++                        } else {
++                            leafs_for_this_chunk = 0;
++                        }
++                    } else {
++                        i++;
++                        tmp >>= 1;
++                        if (i == leafs_for_this_chunk)
++                            leafs_for_this_chunk = 0;
++                    }
++                }
++		goto finish;
++        }       
++
++error:
++	pr_err("Something went wrong in route insertion");
++finish:
++	spin_unlock(&p->lock);
++	return err;
++}
++
++int ppc_lookup(const struct PPC *p, const u64 key, struct net_device **dev)
++{
++	u8 *n16, *n;
++	u16 *c16;
++        struct bitmap_pc *b, *c;
++        u32 off;
++	u8 netdev_index = p->def_nh;
++	u16 n16_idx;/*Index to N16 and C16*/
++        u32 idx, idx_sail;/*Index to B/C*/
++	u32 n_idx;/*Index to N*/
++	u32 c_idx;/*Index to C*/
++	u32 ck_idx;/*Index to CK*/
++	u64 ck_off;/*Index to CK*/
++
++	rcu_read_lock();
++
++	/*extract 16 bits from MSB*/
++	n16_idx = key >> 48;
++	n16 = rcu_dereference(p->N16);
++	if (unlikely(!n16))
++		goto finish;
++
++        /*Find corresponding next-hop in level 16*/
++	if (likely(n16[n16_idx] != 0))
++		netdev_index = n16[n16_idx];
++
++	/*Check if there is a longer prefix; if yes, extract bit 17~32
++	 *  and calculate index to N32
++	 */
++	c16 = rcu_dereference(p->C16);
++	if (likely(c16[n16_idx] != 0)) {
++		idx_sail = ((c16[n16_idx] - 1) << 16) + ((key >> 32) & 0XFFFF);
++                idx = idx_sail >> 6;
++                off = idx_sail & 63;
++	} else {
++		goto finish;
++	}
++
++        /*Find corresponding next-hop in level 32*/
++        c = rcu_dereference(p->C32);
++        b = rcu_dereference(p->B32);
++        if (likely(b[idx].bitmap & (MSK >> off))) {
++            n = rcu_dereference(p->N32);
++            n_idx = b[idx].popcnt + POPCNT_LFT(b[idx].bitmap, off);
++            netdev_index = n[n_idx];
++        }
++
++        /*Check if there is a longer prefix; if yes, extract 33-40 bit
++         * and calculate index to N40
++         */
++        if (likely(c[idx].bitmap & (MSK >> off))) {
++                ck_idx = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, off);
++                ck_off = (key >> 24) & 0XFF;
++                idx_sail = (ck_idx << 8) + ck_off;
++                idx = idx_sail >> 6;
++                off = idx_sail & 63;
++        } else {
++                goto finish;
++        }
++
++        /*Find corresponding next-hop in level 40*/
++        c = rcu_dereference(p->C40);
++        b = rcu_dereference(p->B40);
++        if (likely(b[idx].bitmap & (MSK >> off))) {
++            n = rcu_dereference(p->N40);
++            n_idx = b[idx].popcnt + POPCNT_LFT(b[idx].bitmap, off);
++            netdev_index = n[n_idx];
++        }
++        
++        /*Check if there is a longer prefix; if yes, extract 41-48 bit
++         * and calculate index to N48
++         */
++        if (likely(c[idx].bitmap & (MSK >> off))) {
++                ck_idx = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, off);
++                ck_off = (key >> 16) & 0XFF;
++                idx_sail = (ck_idx << 8) + ck_off;
++                idx = idx_sail >> 6;
++                off = idx_sail & 63;
++        } else {
++                goto finish;
++        }
++
++        /*Find corresponding next-hop in level 48*/
++        c = rcu_dereference(p->C48);
++        b = rcu_dereference(p->B48);
++        if (likely(b[idx].bitmap & (MSK >> off))) {
++            n = rcu_dereference(p->N48);
++            n_idx = b[idx].popcnt + POPCNT_LFT(b[idx].bitmap, off);
++            netdev_index = n[n_idx];
++        }
++        
++        /*Check if there is a longer prefix; if yes, 49-64 bit
++         * and calculate index to N64
++         */
++        if (likely(c[idx].bitmap & (MSK >> off))) {
++                ck_idx = c[idx].popcnt + POPCNT_LFT(c[idx].bitmap, off);
++                idx_sail = (ck_idx << 16) + (key & 0XFFFF);
++                idx = idx_sail >> 6;
++                off = idx_sail & 63;
++        } else {
++                goto finish;
++        }
++
++        /*Find corresponding next-hop in level 64*/
++        b = rcu_dereference(p->B64);
++        if (likely(b[idx].bitmap & (MSK >> off))) {
++            n = rcu_dereference(p->N64);
++            n_idx = b[idx].popcnt + POPCNT_LFT(b[idx].bitmap, off);
++            netdev_index = n[n_idx];
++        }
++
++finish:
++	*dev = p->netdevs[netdev_index];
++	rcu_read_unlock();
++	return 0;
++}
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index 826b14d..c682721 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
+ 		match_do_rr = true;
+ 		m = 0; /* lowest valid score */
+ 	} else if (m == RT6_NUD_FAIL_HARD) {
+-		goto out;
++//Tamim, undo
++//		goto out;
+ 	}
+ 
+ 	if (strict & RT6_LOOKUP_F_REACHABLE)
+ 		rt6_probe(rt);
+ 
+ 	/* note that m can be RT6_NUD_FAIL_PROBE at this point */
+-	if (m > *mpri) {
++//Tamim, undo
++//	if (m > *mpri) {
+ 		*do_rr = match_do_rr;
+ 		*mpri = m;
+ 		match = rt;
+-	}
++//	}
+ out:
+ 	return match;
+ }
+@@ -1146,6 +1148,32 @@ struct rt6_info *rt6_lookup(struct net *net, const struct in6_addr *daddr,
+ }
+ EXPORT_SYMBOL(rt6_lookup);
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++static void get_addr (struct in6_addr *addr, u64 key)
++{
++    __be16 *addr_ipv6 = addr->in6_u.u6_addr16;
++    addr_ipv6[0] = htons(key >> 48);
++    addr_ipv6[1] = htons((key >> 32) & 0XFFFF);
++    addr_ipv6[2] = htons((key >> 16) & 0XFFFF);
++    addr_ipv6[3] = htons(key & 0XFFFF);
++    addr_ipv6[4] = 0;
++    addr_ipv6[5] = 0;
++    addr_ipv6[6] = 0;
++    addr_ipv6[7] = 0;
++}
++
++static u64 get_key (struct in6_addr addr)
++{
++    u64 key;
++    __be16 *addr_ipv6 = addr.in6_u.u6_addr16;
++    key = ((__force u64)(ntohs(addr_ipv6[0])) << 48) |
++          ((__force u64)(ntohs(addr_ipv6[1])) << 32) |
++          ((__force u64)(ntohs(addr_ipv6[2])) << 16) |
++          (__force u64)(ntohs(addr_ipv6[3]));
++    return key;
++}
++#endif
++
+ /* ip6_ins_rt is called with FREE table->tb6_lock.
+  * It takes new route entry, the addition fails by any reason the
+  * route is released.
+@@ -1157,7 +1185,13 @@ static int __ip6_ins_rt(struct fib6_info *rt, struct nl_info *info,
+ {
+ 	int err;
+ 	struct fib6_table *table;
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
+ 
++        if (rt->fib6_dst.plen <= 64) {
++//            pr_err("Inserting %pI6c %d => %s", &rt->fib6_dst.addr, rt->fib6_dst.plen, rt->fib6_nh.nh_dev->name);
++            ppc_insert(&rt->fib6_table->ppc, get_key(rt->fib6_dst.addr), rt->fib6_dst.plen, rt->fib6_nh.nh_dev);            
++        }
++#endif
+ 	table = rt->fib6_table;
+ 	spin_lock_bh(&table->tb6_lock);
+ 	err = fib6_add(&table->tb6_root, rt, info, extack);
+@@ -1854,6 +1888,14 @@ struct fib6_info *fib6_table_lookup(struct net *net, struct fib6_table *table,
+ 	return f6i;
+ }
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++static u64 global_key = 0X2001020000000000;
++#define NUM_TEST_CASES 1000
++static u64 arr [NUM_TEST_CASES];
++static u64 increment = 0X100000000;
++static spinlock_t lock_gen;
++#endif
++
+ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+ 			       int oif, struct flowi6 *fl6,
+ 			       const struct sk_buff *skb, int flags)
+@@ -1861,6 +1903,10 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+ 	struct fib6_info *f6i;
+ 	struct rt6_info *rt;
+ 	int strict = 0;
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++        struct net_device *dev;
++        int i;
++#endif
+ 
+ 	strict |= flags & RT6_LOOKUP_F_IFACE;
+ 	strict |= flags & RT6_LOOKUP_F_IGNORE_LINKSTATE;
+@@ -1869,6 +1915,46 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
+ 
+ 	rcu_read_lock();
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++        
++//        spin_lock(&lock_gen);
++        
++        for (i = 0; i < NUM_TEST_CASES; i++) {
++            arr[i] = global_key;
++            if ( global_key >= 0X2001800000000000) {
++                global_key = 0X2001020000000000;
++                if (increment == 0X100000000)
++                    increment = 0X10000;
++                else if (increment == 0X10000)
++                    increment = 0X1000;
++                else 
++                    increment = 0X100000000;
++            } else { 
++                global_key += increment;
++            }
++        }                
++
++//        for (i = 0; i < NUM_TEST_CASES; i++) {
++//            get_addr(&fl6->daddr, arr[i]);
++//            pr_err("arr[%d] = %pI6c", i, &fl6->daddr);
++//        }
++        
++        for (i = 0; i < NUM_TEST_CASES; i++) {
++            ppc_lookup(&net->ipv6.fib6_main_tbl->ppc, arr[i], &dev);
++            get_addr(&fl6->daddr, arr[i]);            
++            f6i = fib6_table_lookup(net, net->ipv6.fib6_main_tbl, oif, fl6, strict);
++            if (f6i->fib6_nh.nh_dev->name && dev->name &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, dev->name) &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, "wlo1") &&
++                    strcmp(f6i->fib6_nh.nh_dev->name, "lo")) {
++                pr_err("%d.Trie: %pI6c => %s", i, &fl6->daddr, f6i->fib6_nh.nh_dev->name);
++                pr_err("%d.SAIL: %pI6c => %s", i, &fl6->daddr, dev->name);
++            }
++        }
++        
++//        spin_unlock(&lock_gen);
++
++#endif
+ 	f6i = fib6_table_lookup(net, table, oif, fl6, strict);
+ 	if (f6i->fib6_nsiblings)
+ 		f6i = fib6_multipath_select(net, f6i, fl6, oif, skb, strict);
+@@ -3179,7 +3265,14 @@ static int __ip6_del_rt(struct fib6_info *rt, struct nl_info *info)
+ 	struct net *net = info->nl_net;
+ 	struct fib6_table *table;
+ 	int err;
+-
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++        if (rt->fib6_dst.plen <= 64) {
++//            pr_err("Deleting %pI6c/%d", &rt->fib6_dst.addr, rt->fib6_dst.plen);
++//            sail_delete(&rt->fib6_table->sail, get_key(rt->fib6_dst.addr), rt->fib6_dst.plen);
++        }
++#endif
++	table = rt->fib6_table;
++        
+ 	if (rt == net->ipv6.fib6_null_entry) {
+ 		err = -ENOENT;
+ 		goto out;
