@@ -138,10 +138,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..f9d3579
+index 0000000..345c0b6
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,893 @@
+@@ -0,0 +1,885 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -642,8 +642,8 @@ index 0000000..f9d3579
 +                        p->n32_cnt++;
 +                    }
 +                    
-+                    /*Need to move to next chunk*/
-+                    if ((cur_offset + i) == 63) {
++                    /*Need to move to next chunk or this is the last chunk*/
++                    if ((cur_offset + i) == 63 || (i == (leafs_for_this_chunk - 1))) {
 +                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK * p->cnk32_count; j++)
 +                            p->B32[j].popcnt += new_prefixes;
 +                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
@@ -663,8 +663,6 @@ index 0000000..f9d3579
 +                    } else {
 +                        i++;
 +                        tmp >>= 1;
-+                        if (i == leafs_for_this_chunk)
-+                            leafs_for_this_chunk = 0;
 +                    }
 +                }
 +		goto finish;
@@ -725,7 +723,7 @@ index 0000000..f9d3579
 +                    }
 +                    
 +                    /*Need to move to next chunk*/
-+                    if ((cur_offset + i) == 63) {
++                    if ((cur_offset + i) == 63 || (i == (leafs_for_this_chunk - 1))) {
 +                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK_40 * p->cnk40_count; j++)
 +                            p->B40[j].popcnt += new_prefixes;
 +                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
@@ -745,8 +743,6 @@ index 0000000..f9d3579
 +                    } else {
 +                        i++;
 +                        tmp >>= 1;
-+                        if (i == leafs_for_this_chunk)
-+                            leafs_for_this_chunk = 0;
 +                    }
 +                }
 +                goto finish;
@@ -805,7 +801,7 @@ index 0000000..f9d3579
 +                    }
 +                    
 +                    /*Need to move to next chunk*/
-+                    if ((cur_offset + i) == 63) {
++                    if ((cur_offset + i) == 63 || (i == (leafs_for_this_chunk - 1))) {
 +                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK_40 * p->cnk48_count; j++)
 +                            p->B48[j].popcnt += new_prefixes;
 +                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
@@ -825,8 +821,6 @@ index 0000000..f9d3579
 +                    } else {
 +                        i++;
 +                        tmp >>= 1;
-+                        if (i == leafs_for_this_chunk)
-+                            leafs_for_this_chunk = 0;
 +                    }
 +                }
 +                goto finish;
@@ -885,7 +879,7 @@ index 0000000..f9d3579
 +                    }
 +                    
 +                    /*Need to move to next chunk*/
-+                    if ((cur_offset + i) == 63) {
++                    if ((cur_offset + i) == 63 || (i == (leafs_for_this_chunk - 1))) {
 +                        for (j = cur_idx + 1; j < ELEMS_PER_CHUNK * p->cnk64_count; j++)
 +                            p->B64[j].popcnt += new_prefixes;
 +                        /*leafs_for_this_chunk can be 64. So brek it into two left shifts*/
@@ -905,8 +899,6 @@ index 0000000..f9d3579
 +                    } else {
 +                        i++;
 +                        tmp >>= 1;
-+                        if (i == leafs_for_this_chunk)
-+                            leafs_for_this_chunk = 0;
 +                    }
 +                }
 +		goto finish;
@@ -1036,7 +1028,7 @@ index 0000000..f9d3579
 +	return 0;
 +}
 diff --git a/net/ipv6/route.c b/net/ipv6/route.c
-index 826b14d..c682721 100644
+index 826b14d..84c1fe2 100644
 --- a/net/ipv6/route.c
 +++ b/net/ipv6/route.c
 @@ -678,18 +678,20 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
@@ -1157,7 +1149,7 @@ index 826b14d..c682721 100644
 +            } else { 
 +                global_key += increment;
 +            }
-+        }                
++        }   
 +
 +//        for (i = 0; i < NUM_TEST_CASES; i++) {
 +//            get_addr(&fl6->daddr, arr[i]);
