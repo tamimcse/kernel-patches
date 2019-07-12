@@ -138,10 +138,10 @@ index e0026fa..3cf2572 100644
  obj-$(CONFIG_INET) += output_core.o protocol.o $(ipv6-offload)
 diff --git a/net/ipv6/fib_sail_xdp.c b/net/ipv6/fib_sail_xdp.c
 new file mode 100644
-index 0000000..345c0b6
+index 0000000..7bff7e6
 --- /dev/null
 +++ b/net/ipv6/fib_sail_xdp.c
-@@ -0,0 +1,885 @@
+@@ -0,0 +1,828 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -279,63 +279,6 @@ index 0000000..345c0b6
 +	++(*cnk_count);
 +	return 0;
 +}
-+//
-+//static int chunk_insert(u8 *N, u8 *P, struct bitmap_pc *C, u32 *cnk_count, u16 chunk_id, u32 cnk_size)
-+//{
-+//	long long m;
-+//        u16 c_popcnt = 0; 
-+//        int elems_per_chunk_c_arr = cnk_size / 64;
-+//
-+//	if (chunk_id > (*cnk_count + 1) || chunk_id < 1) {
-+//		pr_err("Invalid chunk_id");
-+//		return -EINVAL;
-+//	}
-+//
-+//	if (*cnk_count >= NUM40) {
-+//		pr_err("Cannot insert a new chunk. The chunk array is full");
-+//		return -EINVAL;
-+//	}
-+//
-+//	/*shift each element one step right to make
-+//	 *space for the new one
-+//	 */      
-+//        memmove(&N[chunk_id * cnk_size], &N[(chunk_id - 1) * cnk_size], 
-+//                (*cnk_count - chunk_id + 1) * cnk_size);
-+//        memmove(&P[chunk_id * cnk_size], &P[(chunk_id - 1) * cnk_size], 
-+//                (*cnk_count - chunk_id + 1) * cnk_size);
-+//
-+//	/*Reset the newly created empty chunk*/
-+//	m = (chunk_id - 1) * cnk_size;
-+//	for (; m < chunk_id * cnk_size; m++) {
-+//		N[m] = 0;
-+//		P[m] = 0;
-+//	}
-+//        
-+//        if (!C)
-+//            goto finish;
-+//        
-+//	/*shift each element one step right to make
-+//	 *space for the new one
-+//	 */
-+//        memmove(&C[chunk_id * elems_per_chunk_c_arr], 
-+//                &C[(chunk_id - 1) * elems_per_chunk_c_arr], 
-+//                (*cnk_count - chunk_id + 1) * elems_per_chunk_c_arr);
-+//
-+//        /*Find the popcnt of the last element to the left*/
-+//        if (chunk_id > 1)
-+//            c_popcnt = C[(chunk_id - 1) * elems_per_chunk_c_arr - 1].popcnt;
-+//        
-+//	/*Reset the newly created empty chunk*/
-+//	m = (chunk_id - 1) * elems_per_chunk_c_arr;
-+//	for (; m < chunk_id * elems_per_chunk_c_arr; m++) {
-+//            C[m].bitmap = 0;
-+//            C[m].popcnt = c_popcnt;
-+//	}
-+//
-+//finish:
-+//	++(*cnk_count);
-+//	return 0;
-+//}
 +
 +/*Calculate the chunk ID for level 24 based on C16*/
 +static u16 calc_ckid24_from_C16(u16 *c16, u32 c16_size, u16 idx16)
