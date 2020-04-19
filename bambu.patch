@@ -1,0 +1,30 @@
+diff --git a/etc/devices/Generic_devices/Generic-yosysOpenROAD.xml b/etc/devices/Generic_devices/Generic-yosysOpenROAD.xml
+index f0b18f8b..03d099d5 100644
+--- a/etc/devices/Generic_devices/Generic-yosysOpenROAD.xml
++++ b/etc/devices/Generic_devices/Generic-yosysOpenROAD.xml
+@@ -290,6 +290,7 @@
+       <cmd name="# STEP 1: Global placement"/>
+       <cmd name="set_wire_rc -layer $::env(WIRE_RC_LAYER)"/>
+       <cmd name="global_placement -timing_driven -density $::env(PLACE_DENSITY)"/>
++      <cmd name="write_def ${RESULTS_DIR}/3_1_place_gp.def"/>
+       <cmd name="# Perform resizing and buffering"/>
+       <cmd name="set dont_use_cells &quot;&quot;"/>
+       <cmd name="foreach cell $::env(DONT_USE_CELLS)} {"/>
+@@ -325,6 +326,7 @@
+       <cmd name="repair_hold_violations -buffer_cell \$buffer_cell"/>
+       <cmd name="# STEP 3: Detail placement"/>
+       <cmd name="legalize_placement"/>
++      <cmd name="write_def ${RESULTS_DIR}/3_3_place_dp.def"/>
+       <cmd name="#OpeNPDN"/>
+       <cmd name="#analyze_power_grid"/>
+       <cmd name="# Run TritonCTS"/>
+@@ -333,6 +335,9 @@
+       <cmd name="                     -root_buf &quot;$::env(CTS_BUF_CELL)&quot; \\"/>
+       <cmd name="                     -wire_unit 20"/>
+       <cmd name="legalize_placement"/>
++      <cmd name="write_def ${RESULTS_DIR}/4_cts.def"/>
++      <cmd name="write_verilog ${RESULTS_DIR}/4_cts.v"/>
++      <cmd name="write_sdc ${RESULTS_DIR}/4_cts.sdc"/>
+       <cmd name="# STEP 1: Run global route"/>
+       <cmd name="fastroute -output_file ${RESULTS_DIR}/route.guide \\"/>
+       <cmd name="          -max_routing_layer $::env(MAX_ROUTING_LAYER) \\"/>
